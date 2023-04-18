@@ -166,6 +166,10 @@ class SlackChatExporter(QWidget):
         self.save_media_checkbox.setEnabled(False)
         self.chat_list.clear()
         self.loading_bar.setValue(0)
+        self.search_bar.setEnabled(False)
+        self.save_button.setEnabled(False)
+        self.chat_type_combo.setEnabled(False)
+        self.token_input.setEnabled(False)
         QApplication.processEvents()
         self.chat_data = []
         self.visible_chat_data = []
@@ -216,6 +220,11 @@ class SlackChatExporter(QWidget):
         self.visible_chat_data = self.chat_data
         self.save_media_checkbox.setEnabled(True)
         self.save_button.setEnabled(True)
+        self.search_bar.setEnabled(True)
+        self.save_button.setEnabled(True)
+        self.chat_type_combo.setEnabled(True)
+        self.token_input.setEnabled(True)
+        QApplication.processEvents()
 
     def save_chat_history(self):
         self.search_bar.clear()
@@ -223,6 +232,10 @@ class SlackChatExporter(QWidget):
         self.save_button.setEnabled(False)
         self.save_media_checkbox.setEnabled(False)
         self.loading_bar.setValue(0)
+        self.search_bar.setEnabled(False)
+        self.save_button.setEnabled(False)
+        self.chat_type_combo.setEnabled(False)
+        self.token_input.setEnabled(False)
         QApplication.processEvents()
         selected_chats = []
         save_media = self.save_media_checkbox.isChecked()
@@ -288,6 +301,10 @@ class SlackChatExporter(QWidget):
         self.loading_bar.setValue(100)
         self.save_button.setEnabled(True)
         self.save_media_checkbox.setEnabled(True)
+        self.search_bar.setEnabled(True)
+        self.save_button.setEnabled(True)
+        self.chat_type_combo.setEnabled(True)
+        self.token_input.setEnabled(True)
         QApplication.processEvents()
 
     def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list, chat_percentage: int):
@@ -649,6 +666,8 @@ class SlackChatExporter(QWidget):
                                                                                                "").replace(
             "/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
         parts = file_name_fixed.rsplit(".", 1)
+        if len(parts) == 1:
+            return file_name_fixed
         new_file_name = parts[0].replace(".", "_")
         count = 1
         while f"{new_file_name}{count}.{parts[1]}" in self.media_file_names:
