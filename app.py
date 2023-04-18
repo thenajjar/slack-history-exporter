@@ -1,18 +1,20 @@
-import sys
-import os
-import logging
-import requests
-
-from PyQt5.QtCore import Qt
-from datetime import datetime
 import json
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QComboBox, QPushButton, QGridLayout, \
-    QListWidget, QListWidgetItem, QCheckBox, QProgressBar, QLineEdit, QFileDialog
+import logging
+import os
+import sys
+from datetime import datetime
+
+import requests
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QLabel, QLineEdit, \
+    QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QWidget
 
 from libraries.slack import SlackClient
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+version = "V1.0.0"
 
 try:
     this_file = __file__
@@ -116,6 +118,9 @@ class SlackChatExporter(QWidget):
         self.save_button.clicked.connect(self.save_chat_history)
         self.save_button.setEnabled(False)
 
+        # add label "created by"
+        self.created_by_label = QLabel(f"{version} - Created by: Abdulwahab Alnajjar")
+
         grid = QGridLayout()
         grid.addWidget(self.token_label, 0, 0)
         grid.addWidget(self.token_input, 0, 1)
@@ -131,11 +136,39 @@ class SlackChatExporter(QWidget):
         grid.addWidget(self.chat_list, 8, 0, 1, 2)
         grid.addWidget(self.save_media_checkbox, 9, 0)
         grid.addWidget(self.save_button, 9, 1)
+        grid.addWidget(self.created_by_label, 10, 0, 1, 2)
 
         self.setLayout(grid)
 
-        self.setWindowTitle("Chat Exporter")
+        self.setWindowTitle("Slack Chat History Exporter")
         self.show()
+
+    def closeEvent(self, event):
+        try:
+            self.slack_user_token = self.token_input.text()
+            with open(os.path.join(application_path, "tokens.json"), "w") as f:
+                json.dump({"slack_user_token": self.slack_user_token}, f)
+            with open(os.path.join(application_path, "users.json"), "w") as f:
+                json.dump(self.users, f)
+            QApplication.processEvents()
+        except Exception as e:
+            logger.exception(e)
+            logger.error({
+                "class": self.__class__.__name__,
+                "method": "closeEvent",
+                "error_message": "Error saving users.json or tokens.json.",
+                "error": str(e)
+            })
+        reply = QMessageBox.question(
+            self,
+            "Message", "Are you sure you want to exist?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        # save users.json and tokens.json
+        if reply == QMessageBox.Yes:
+            event.accept()
+        else:
+            event.ignore()
 
     def update_description(self, text):
         self.description_label.setText(self.chat_types[text])
@@ -198,12 +231,14 @@ class SlackChatExporter(QWidget):
         chat_type = self.chat_type_combo.currentText()
         if chat_type == "Channel":
             channels = self.slack_client.get_chats_list(chat_type="channel")
-            self.chat_data = [{"number": i + 1, "type": chat_type, "data": [c["name"], c["name"]], "chat": c} for i, c in
+            self.chat_data = [{"number": i + 1, "type": chat_type, "data": [c["name"], c["name"]], "chat": c} for i, c
+                              in
                               enumerate(channels)]
             self.loading_bar.setValue(100)
         elif chat_type == "Group Chat":
             groups = self.slack_client.get_chats_list(chat_type="group")
-            self.chat_data = [{"number": i + 1, "type": chat_type, "data": [g["name"], g["name"]], "chat": g} for i, g in
+            self.chat_data = [{"number": i + 1, "type": chat_type, "data": [g["name"], g["name"]], "chat": g} for i, g
+                              in
                               enumerate(groups)]
             self.loading_bar.setValue(100)
         elif chat_type == "Direct Message":
@@ -340,7 +375,8 @@ class SlackChatExporter(QWidget):
         self.token_input.setEnabled(True)
         QApplication.processEvents()
 
-    def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list, chat_percentage: int):
+    def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list,
+                             chat_percentage: int):
         try:
             html_content = html_template
             page_title = f"Nana Slack | {chat_type} | {chat_name}"

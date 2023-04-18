@@ -1,7 +1,8 @@
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
 import logging
 from typing import Optional
+
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +13,7 @@ class SlackClient:
         self.client = WebClient(token=token)
 
     def get_chats_list(self, chat_type: str, limit: Optional[int] = 9999,
-                               exclude_archived: Optional[bool] = True):
+                       exclude_archived: Optional[bool] = True):
         chat_type = chat_type.lower()
         if not self.is_valid_chat_type(chat_type):
             return []
