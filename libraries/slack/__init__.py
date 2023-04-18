@@ -131,7 +131,6 @@ class SlackClient:
 
     def get_message_replies(self, chat_id: str, message_ts: str):
         try:
-            logger.info(f"Fetching replies for message {message_ts}...")
             response = self.client.conversations_replies(
                 channel=chat_id,
                 ts=message_ts

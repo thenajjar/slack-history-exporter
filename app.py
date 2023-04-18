@@ -49,7 +49,6 @@ class SlackChatExporter(QWidget):
         self.folder_path_button = QPushButton("Select Folder")
         self.folder_path_button.clicked.connect(self.select_folder_path)
 
-
         self.chat_type_label = QLabel("Choose the type of chat to export:")
         self.chat_type_combo = QComboBox()
         self.chat_type_combo.addItems(self.chat_types.keys())
@@ -106,7 +105,6 @@ class SlackChatExporter(QWidget):
     def select_folder_path(self):
         self.folder_path = QFileDialog.getExistingDirectory(self, "Select Directory")
         self.folder_path_button.setText(self.folder_path)
-
 
     def search_chat_names(self, text):
         self.chat_list.clear()
@@ -199,12 +197,29 @@ class SlackChatExporter(QWidget):
         for chat in selected_chats:
             chat_percentage = int((selected_chats.index(chat) + 1) / len(selected_chats) * 100)
             chat_id = chat["chat"]["id"]
-            if chat["type"] != "Direct Message":
+            chat_type = chat["type"]
+            if chat_type != "Direct Message":
                 chat_name = chat["chat"]["name"]
             else:
                 user_id = chat["chat"]["user"]
                 user_data = self.get_user_data(user_id=user_id)
                 chat_name = f"{user_data['name']} ({user_data['real_name']})"
+            self.media_file_names = []
+            folder_name = f"Nana Slack - {chat_type} - {chat_name}".replace("<", "").replace(">", "").replace(":",
+                                                                                                              "").replace(
+                "?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
+            project_path = application_path
+            if self.folder_path_button.text() != "Default":
+                project_path = self.folder_path_button.text()
+            folder_path = f"{project_path}/{folder_name}"
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+            media_folder_path = f"{folder_path}/media"
+            if not os.path.exists(media_folder_path):
+                os.makedirs(media_folder_path)
+            # get all the file names in the media folder
+            for file in os.listdir(media_folder_path):
+                self.media_file_names.append(file)
             chat_messages = self.slack_client.get_chat_messages(
                 chat_id=chat_id,
                 chat_name=chat_name,
@@ -212,22 +227,34 @@ class SlackChatExporter(QWidget):
             html_result = self.convert_chat_to_html(
                 chat_id=chat_id,
                 chat_name=chat_name,
-                chat_type=chat["type"],
+                chat_type=chat_type,
                 chat_messages=chat_messages,
+                chat_percentage=chat_percentage
             )
-            self.loading_bar.setValue(int(chat_percentage * 0.25))
+            self.loading_bar.setValue(int(chat_percentage * 0.33))
             QApplication.processEvents()
-            self.save_chat_to_file(chat_name=chat_name, chat_type=chat["type"], html_content=html_result.get("html"))
+            self.save_chat_to_file(
+                chat_name=chat_name,
+                chat_type=chat["type"],
+                html_content=html_result.get("html"),
+                folder_path=folder_path
+            )
             self.loading_bar.setValue(int(chat_percentage * 0.5))
             QApplication.processEvents()
             if save_media:
-                self.save_chat_media(chat_name=chat_name, chat_type=chat["type"], media=html_result.get("media"), chat_percentage=chat_percentage)
+                self.save_chat_media(
+                    chat_name=chat_name,
+                    chat_type=chat["type"],
+                    media=html_result.get("media"),
+                    chat_percentage=chat_percentage,
+                    media_folder_path=media_folder_path
+                )
         self.loading_bar.setValue(100)
         self.save_button.setEnabled(True)
         self.save_media_checkbox.setEnabled(True)
         QApplication.processEvents()
 
-    def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list):
+    def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list, chat_percentage: int):
         try:
             html_content = html_template
             page_title = f"Nana Slack | {chat_type} | {chat_name}"
@@ -235,6 +262,7 @@ class SlackChatExporter(QWidget):
             chat_messages_result = self.convert_chat_messages_to_html(
                 chat_id=chat_id,
                 chat_messages=chat_messages,
+                chat_percentage=chat_percentage
             )
             html_content = html_content.replace("PLACE_MESSAGES_HERE", chat_messages_result.get("html"))
             html_content = html_content.replace(
@@ -259,112 +287,146 @@ class SlackChatExporter(QWidget):
                 "media": []
             }
 
-    def convert_chat_messages_to_html(self, chat_id, chat_messages: list):
-        media_dict = []
+    def convert_chat_messages_to_html(self, chat_id, chat_messages: list, chat_percentage: int):
+        media_list = []
         replies_dict = {}
         html = ""
         last_date = ""
-        for message in reversed(chat_messages):
-            replies = []
-            user_id = message["user"]
-            user_data = self.get_user_data(user_id=user_id)
-            user_name = user_data["real_name"]
-            message_ts = message["ts"]
-            timestamp = datetime.fromtimestamp(float(message_ts)).strftime("%Y-%m-%d %H:%M:%S")
-            current_date = timestamp.split(" ")[0]
-            # add line break if date changed
-            if current_date != last_date:
-                html += f"""
-                    <div class="date">
-                        <p><bdi>{current_date}</bdi></p>
-                    </div>
-                    """
-                last_date = current_date
-            if message_text := message.get("text"):
-                html += self.convert_message_to_html(message=message, user_name=user_name)
-            else:
-                html += f"""
-                        <div class="message other">
-                            <p><strong><bdi>{user_name}</bdi></strong></p>
+        for message_index, message in enumerate(reversed(chat_messages)):
+            try:
+                replies = []
+                user_id = message["user"] if message.get("user") else message["bot_id"]
+                user_data = self.get_user_data(user_id=user_id)
+                user_name = user_data["real_name"]
+                message_ts = message["ts"]
+                timestamp = datetime.fromtimestamp(float(message_ts)).strftime("%Y-%m-%d %H:%M:%S")
+                current_date = timestamp.split(" ")[0]
+                # add line break if date changed
+                if current_date != last_date:
+                    html += f"""
+                        <div class="date">
+                            <p><bdi>{current_date}</bdi></p>
+                        </div>
                         """
-                if message.get("files"):
-                    for file in message["files"]:
-                        if file_url := file.get("url_private"):
-                            file_dict = {}
-                            file_name = file["name"]
-                            file_name_fixed = file_name.replace("<", "").replace(">", "").replace(":", "").replace("?",
-                                                                                                                   "").replace(
-                                "/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
-
-                            html += f"""
-                                        <p><a href="{file_name_fixed}">{file_name_fixed}</a></p>
-                                    """
-                            if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
-                                html += f"""
-                                            <video class="video" controls>
-                                                <source src="{file_name_fixed}" type="video/mp4">
-                                                <source src="{file_name_fixed}" type="video/quicktime">
-                                                Your browser does not support the video tag.
-                                            </video>
-                                        """
-                            elif file.get("filetype") in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff", "tif",
-                                                          "webp"]:
-                                html += f"""
-                                    <div class="container">
-                                        <img class="img" src="{file_name_fixed}">
-                                    </div>
-                                """
-                            file_dict["file_id"] = file.get("id")
-                            file_dict["file_type"] = file.get("filetype")
-                            file_dict["file_name"] = file_name_fixed
-                            file_dict["file_url"] = file_url
-                            media_dict.append(file_dict)
-                        elif file.get("name"):
-                            html += f"""
-                                                <p><strong>{file['name']}</strong></p>
-                                            """
+                    last_date = current_date
+                if message.get("text"):
+                    html += self.convert_message_to_html(message=message, user_name=user_name)
                 else:
-                    html += """
-                                <p><em>Unknown message type</em></p>
+                    html += f"""
+                            <div class="message other">
+                                <p><strong><bdi>{user_name}</bdi></strong></p>
+                            """
+                    if message.get("files"):
+                        for file in message["files"]:
+                            try:
+                                if file_url := file.get("url_private"):
+                                    file_dict = {}
+                                    file_name = file["name"]
+                                    file_name_fixed = self.fix_file_name(file_name=file_name)
+                                    self.media_file_names.append(file_name_fixed)
+                                    html += f"""
+                                                <p><a href="./media/{file_name_fixed}">{file_name_fixed}</a></p>
+                                            """
+                                    if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
+                                        html += f"""
+                                                    <video class="video" controls>
+                                                        <source src="./media/{file_name_fixed}" type="video/mp4">
+                                                        <source src="./media/{file_name_fixed}" type="video/quicktime">
+                                                        Your browser does not support the video tag.
+                                                    </video>
+                                                """
+                                    elif file.get("filetype") in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff",
+                                                                  "tif",
+                                                                  "webp"]:
+                                        html += f"""
+                                            <div class="container">
+                                                <img class="img" src="./media/{file_name_fixed}">
+                                            </div>
+                                        """
+                                    file_dict["file_name"] = file_name_fixed
+                                    file_dict["file_url"] = file_url
+                                    media_list.append(file_dict)
+                                elif file.get("name"):
+                                    html += f"""
+                                                        <p><strong>{file['name']}</strong></p>
+                                                    """
+                            except Exception as e:
+                                logger.exception(e)
+                                logger.error({
+                                    "class": self.__class__.__name__,
+                                    "method": "convert_chat_messages_to_html",
+                                    "error_message": "Error converting file to html",
+                                    "chat_id": chat_id,
+                                    "error": str(e)
+                                })
+                    else:
+                        html += """
+                                    <p><em>Unknown message type</em></p>
+                                """
+
+                if message.get("reply_count") and message.get("reply_count") > 0:
+                    temp_replies = self.slack_client.get_message_replies(
+                        chat_id=chat_id,
+                        message_ts=message_ts
+                    )
+                    # fix name of users in replies
+                    for reply in temp_replies:
+                        try:
+                            reply_user_id = reply["user"] if reply.get("user") else reply["bot_id"]
+                            reply_user_data = self.get_user_data(user_id=reply_user_id)
+                            reply["user"] = reply_user_data["real_name"]
+                            reply_result = self.convert_reply_to_html(reply=reply)
+                            reply["html"] = reply_result.get("html")
+                            if reply_result.get("media"):
+                                media_list.extend(reply_result.get("media"))
+                            replies.append(reply)
+                        except Exception as e:
+                            logger.exception(e)
+                            logger.error({
+                                "class": self.__class__.__name__,
+                                "method": "convert_chat_messages_to_html",
+                                "error_message": "Error converting chat messages to html",
+                                "chat_id": chat_id,
+                                "chat_message": message,
+                                "error": str(e)
+                            })
+                if replies:
+                    html += f"""
+                                <div class="timestamp"><button onclick="showReplies('{message_ts}')"
+                                        data-timestamp="{message_ts}"
+                                        class="replies-btn">{message["reply_count"]} replies</button>{timestamp}
+                                </div>
                             """
 
-            if message.get("reply_count") and message.get("reply_count") > 0:
-                temp_replies = self.slack_client.get_message_replies(
-                    chat_id=chat_id,
-                    message_ts=message_ts
-                )
-                # fix name of users in replies
-                for reply in temp_replies:
-                    reply_user_id = reply["user"]
-                    reply_user_data = self.get_user_data(user_id=reply_user_id)
-                    reply["user"] = reply_user_data["real_name"]
-                    reply_result = self.convert_reply_to_html(reply=reply)
-                    reply["html"] = reply_result.get("html")
-                    if reply_result.get("media"):
-                        media_dict.extend(reply_result.get("media"))
-                    replies.append(reply)
-            if replies:
                 html += f"""
-                            <div class="timestamp"><button onclick="showReplies('{message_ts}')"
-                                    data-timestamp="{message_ts}"
-                                    class="replies-btn">{message["reply_count"]} replies</button>{timestamp}
-                            </div>
+                            <div class="timestamp">{timestamp}</div>
+                        </div>
                         """
-
-            html += f"""
-                        <div class="timestamp">{timestamp}</div>
-                    </div>
-                    """
-            replies_dict[message_ts] = replies
+                replies_dict[message_ts] = replies
+                message_percentage = (message_index / len(chat_messages)) * 100
+                total_percentage = int(chat_percentage * ((message_percentage / 100) * 0.33))
+                self.loading_bar.setValue(total_percentage)
+                QApplication.processEvents()
+            except Exception as e:
+                logger.exception(e)
+                logger.error({
+                    "class": self.__class__.__name__,
+                    "method": "convert_chat_messages_to_html",
+                    "error_message": "Error converting chat messages to html",
+                    "chat_id": chat_id,
+                    "chat_message": message,
+                    "error": str(e)
+                })
+        self.media_file_names = []
         return {
             "html": html,
             "replies": replies_dict,
-            "media": media_dict
+            "media": media_list
         }
 
     def convert_reply_to_html(self, reply):
         reply_timestamp = datetime.fromtimestamp(float(reply["ts"])).strftime("%Y-%m-%d %H:%M:%S")
-        media_dict = []
+        media_list = []
         html = '<div class="message reply">'
         if reply.get("text"):
             html += self.convert_message_to_html(message=reply, user_name=reply["user"])
@@ -379,37 +441,46 @@ class SlackChatExporter(QWidget):
                                     """
             if reply.get("files"):
                 for file in reply["files"]:
-                    if file_url := file.get("url_private"):
-                        file_dict = {}
-                        file_name = file["name"]
-                        file_name_fixed = file_name.replace("<", "").replace(">", "").replace(":", "").replace("?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
-                        html += f"""
-                                                    <p><a href="{file_name_fixed}">{file_name_fixed}</a></p>
-                                                """
-                        if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
+                    try:
+                        if file_url := file.get("url_private"):
+                            file_dict = {}
+                            file_name = file["name"]
+                            file_name_fixed = self.fix_file_name(file_name=file_name)
+                            self.media_file_names.append(file_name_fixed)
                             html += f"""
-                                                        <video class="video" controls>
-                                                            <source src="{file_name_fixed}" type="video/mp4">
-                                                            <source src="{file_name_fixed}" type="video/quicktime">
-                                                            Your browser does not support the video tag.
-                                                        </video>
+                                                        <p><a href="./media/{file_name_fixed}">{file_name_fixed}</a></p>
                                                     """
-                        elif file.get("filetype") in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff", "tif",
-                                                      "webp"]:
-                            html += f"""
-                                                <div class="container">
-                                                    <img class="img" src="{file_name_fixed}">
-                                                </div>
-                                            """
-                        file_dict["file_id"] = file.get("id")
-                        file_dict["file_type"] = file.get("filetype")
-                        file_dict["file_name"] = file_name_fixed
-                        file_dict["file_url"] = file_url
-                        media_dict.append(file_dict)
-                    elif file.get("name"):
-                        html += f"""
-                                                            <p><strong>{file['name']}</strong></p>
+                            if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
+                                html += f"""
+                                                            <video class="video" controls>
+                                                                <source src="./media/{file_name_fixed}" type="video/mp4">
+                                                                <source src="./media/{file_name_fixed}" type="video/quicktime">
+                                                                Your browser does not support the video tag.
+                                                            </video>
                                                         """
+                            elif file.get("filetype") in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff", "tif",
+                                                          "webp"]:
+                                html += f"""
+                                                    <div class="container">
+                                                        <img class="img" src="./media/{file_name_fixed}">
+                                                    </div>
+                                                """
+                            file_dict["file_name"] = file_name_fixed
+                            file_dict["file_url"] = file_url
+                            media_list.append(file_dict)
+                        elif file.get("name"):
+                            html += f"""
+                                                                <p><strong>{file['name']}</strong></p>
+                                                            """
+                    except Exception as e:
+                        logger.exception(e)
+                        logger.error({
+                            "class": self.__class__.__name__,
+                            "method": "convert_reply_to_html",
+                            "error_message": "Error converting reply to html",
+                            "reply": reply,
+                            "error": str(e)
+                        })
             else:
                 html += """
                                             <p><em>Unknown message type</em></p>
@@ -418,7 +489,19 @@ class SlackChatExporter(QWidget):
                                         <div class="timestamp">{reply_timestamp}</div>
                                     </div></div>
                                     """
-        return {"html": html, "media": media_dict}
+        return {"html": html, "media": media_list.copy()}
+
+    def fix_file_name(self, file_name):
+        file_name_fixed = file_name.replace("<", "").replace(">", "").replace(":", "").replace("?",
+                                                                                               "").replace(
+            "/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
+        parts = file_name_fixed.rsplit(".", 1)
+        new_file_name = parts[0].replace(".", "_")
+        count = 1
+        while f"{new_file_name}{count}.{parts[1]}" in self.media_file_names:
+            count += 1
+        file_name_fixed = f"{new_file_name}{count}.{parts[1]}"
+        return file_name_fixed
 
     def convert_message_to_html(self, message, user_name):
         html = ""
@@ -459,17 +542,13 @@ class SlackChatExporter(QWidget):
                                                 <p><img class="img" src="{image_url}"></p>
                                             """
         return html
-    def save_chat_to_file(self, chat_name: str, chat_type: str, html_content: str):
+
+    def save_chat_to_file(self, chat_name: str, chat_type: str, html_content: str, folder_path: str):
         try:
-            filename = f"Nana Slack - {chat_type} - {chat_name}.html".replace("<", "").replace(">", "").replace(":", "").replace("?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
-            folder_path = f"Nana Slack - {chat_type} - {chat_name}"
-            project_path = application_path
-            if self.folder_path_button.text() != "Default":
-                project_path = self.folder_path_button.text()
-            full_path = f"{project_path}/{folder_path}"
-            if not os.path.exists(full_path):
-                os.makedirs(full_path)
-            with open(f"{full_path}/{filename}", "w", encoding="utf-8") as f:
+            html_filename = f"Nana Slack - {chat_type} - {chat_name}.html".replace("<", "").replace(">", "").replace(
+                ":", "").replace("?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace(
+                '"', "")
+            with open(f"{folder_path}/{html_filename}", "w", encoding="utf-8") as f:
                 f.write(html_content)
         except Exception as e:
             logger.error({
@@ -481,27 +560,20 @@ class SlackChatExporter(QWidget):
                 "error": str(e)
             })
 
-
-    def save_chat_media(self, chat_name: str, chat_type: str, media: list, chat_percentage: int):
+    def save_chat_media(self, chat_name: str, chat_type: str, media: list, chat_percentage: int,
+                        media_folder_path: str):
         try:
             if media:
-                folder_name = f"Nana Slack - {chat_type} - {chat_name}"
-                project_path = application_path
-                if self.folder_path_button.text() != "Default":
-                    project_path = self.folder_path_button.text()
-                path = f"{project_path}/{folder_name}"
-                if not os.path.exists(path):
-                    os.makedirs(path)
                 for file in media:
                     try:
-                        files_percentage = int((media.index(file) + 1) / len(media) * 100)
-                        file_name = file["file_name"].replace("<", "").replace(">", "").replace(":", "").replace("?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
-                        file_id = file["file_id"]
+                        files_percentage = (media.index(file) + 1) / len(media) * 100
+                        file_name = file["file_name"].replace("<", "").replace(">", "").replace(":", "").replace("?",
+                                                                                                                 "").replace(
+                            "/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
                         file_url = file["file_url"]
-                        file_path = f"{path}/{file_name}"
+                        media_file_path = f"{media_folder_path}/{file_name}"
                         # check if file does not exists already in the directory
-                        if os.path.exists(file_path):
-                            logger.info(f"File {file_name} already exists!")
+                        if os.path.exists(media_file_path):
                             total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
                             self.loading_bar.setValue(total_percentage)
                             QApplication.processEvents()
@@ -511,7 +583,7 @@ class SlackChatExporter(QWidget):
                             "Authorization": f"Bearer {self.slack_user_token}"
                         }
                         response = requests.get(file_url, headers=headers)
-                        with open(file_path, 'wb') as f:
+                        with open(media_file_path, 'wb') as f:
                             f.write(response.content)
                         total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
                         self.loading_bar.setValue(total_percentage)
@@ -537,6 +609,7 @@ class SlackChatExporter(QWidget):
                 "chat_type": chat_type,
                 "error": str(e)
             })
+
 
 html_template = """
 <!DOCTYPE html>
@@ -684,7 +757,6 @@ html_template = """
     </body>
 </html>
 """
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
