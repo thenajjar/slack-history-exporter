@@ -8,7 +8,7 @@ from datetime import datetime
 import json
 from dotenv import load_dotenv
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QComboBox, QPushButton, QGridLayout, \
-    QListWidget, QListWidgetItem, QCheckBox, QProgressBar
+    QListWidget, QListWidgetItem, QCheckBox, QProgressBar, QLineEdit
 
 from libraries.slack import SlackClient
 
@@ -29,6 +29,7 @@ class SlackChatExporter(QWidget):
         self.slack_bot_token = os.environ.get("SLACK_BOT_TOKEN")
         self.slack_client = SlackClient(self.slack_user_token)
         self.chat_data = []
+        self.visible_chat_data = []
         self.users = {}
 
         self.init_ui()
@@ -47,6 +48,9 @@ class SlackChatExporter(QWidget):
         self.loading_bar = QProgressBar()
         self.loading_bar.setRange(0, 100)
 
+        # add search bar
+        self.search_bar = QLineEdit()
+        self.search_bar.textChanged.connect(self.search_chat_names)
         self.chat_list_label = QLabel("Select chat(s) to export:")
         self.chat_list = QListWidget()
         self.chat_list.setSelectionMode(QListWidget.NoSelection)
@@ -65,10 +69,11 @@ class SlackChatExporter(QWidget):
         grid.addWidget(self.description_label, 1, 0, 1, 2)
         grid.addWidget(self.fetch_button, 2, 0, 1, 2)
         grid.addWidget(self.loading_bar, 3, 0, 1, 2)
-        grid.addWidget(self.chat_list_label, 4, 0)
-        grid.addWidget(self.chat_list, 5, 0, 1, 2)
-        grid.addWidget(self.save_media_checkbox, 6, 0)
-        grid.addWidget(self.save_button, 6, 1)
+        grid.addWidget(self.search_bar, 4, 0)
+        grid.addWidget(self.chat_list_label, 5, 0)
+        grid.addWidget(self.chat_list, 6, 0, 1, 2)
+        grid.addWidget(self.save_media_checkbox, 7, 0)
+        grid.addWidget(self.save_button, 7, 1)
 
         self.setLayout(grid)
 
@@ -77,6 +82,17 @@ class SlackChatExporter(QWidget):
 
     def update_description(self, text):
         self.description_label.setText(self.chat_types[text])
+
+    def search_chat_names(self, text):
+        self.chat_list.clear()
+        self.visible_chat_data = []
+        for chat in self.chat_data:
+            if text.lower() in chat["data"][0].lower():
+                item = QListWidgetItem(f"{chat['number']}: {', '.join(chat['data'])}")
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Unchecked)
+                self.chat_list.addItem(item)
+                self.visible_chat_data.append(chat)
 
     def get_user_data(self, user_id: str):
         try:
@@ -92,6 +108,8 @@ class SlackChatExporter(QWidget):
         self.chat_list.clear()
         self.loading_bar.setValue(0)
         QApplication.processEvents()
+        self.chat_data = []
+        self.visible_chat_data = []
         chat_type = self.chat_type_combo.currentText()
         if chat_type == "Channel":
             channels = self.slack_client.get_chats_list(chat_type="channel")
@@ -130,17 +148,23 @@ class SlackChatExporter(QWidget):
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked)
                 self.chat_list.addItem(item)
+        self.visible_chat_data = self.chat_data
         self.save_media_checkbox.setEnabled(True)
         self.save_button.setEnabled(True)
 
     def save_chat_history(self):
+        self.save_button.setEnabled(False)
+        self.save_media_checkbox.setEnabled(False)
+        self.loading_bar.setValue(0)
+        QApplication.processEvents()
         selected_chats = []
         save_media = self.save_media_checkbox.isChecked()
         for i in range(self.chat_list.count()):
             item = self.chat_list.item(i)
             if item.checkState() == Qt.Checked:
-                selected_chats.append(self.chat_data[i])
+                selected_chats.append(self.visible_chat_data[i])
         for chat in selected_chats:
+            chat_percentage = int((selected_chats.index(chat) + 1) / len(selected_chats) * 100)
             chat_id = chat["chat"]["id"]
             if chat["type"] != "Direct Message":
                 chat_name = chat["chat"]["name"]
@@ -158,9 +182,17 @@ class SlackChatExporter(QWidget):
                 chat_type=chat["type"],
                 chat_messages=chat_messages,
             )
+            self.loading_bar.setValue(int(chat_percentage * 0.25))
+            QApplication.processEvents()
             self.save_chat_to_file(chat_name=chat_name, chat_type=chat["type"], html_content=html_result.get("html"))
+            self.loading_bar.setValue(int(chat_percentage * 0.5))
+            QApplication.processEvents()
             if save_media:
-                self.save_chat_media(chat_name=chat_name, chat_type=chat["type"], media=html_result.get("media"))
+                self.save_chat_media(chat_name=chat_name, chat_type=chat["type"], media=html_result.get("media"), chat_percentage=chat_percentage)
+        self.loading_bar.setValue(100)
+        self.save_button.setEnabled(True)
+        self.save_media_checkbox.setEnabled(True)
+        QApplication.processEvents()
 
     def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list):
         try:
@@ -337,36 +369,28 @@ class SlackChatExporter(QWidget):
             })
 
 
-    def save_chat_media(self, chat_name: str, chat_type: str, media: list):
+    def save_chat_media(self, chat_name: str, chat_type: str, media: list, chat_percentage: int):
         try:
             if media:
                 path = f"Nana Slack - {chat_type} - {chat_name}"
                 if not os.path.exists(path):
                     os.makedirs(path)
                 for file in media:
+                    files_percentage = int((media.index(file) + 1) / len(media) * 100)
                     file_name = file["file_name"]
                     file_id = file["file_id"]
-                    url = f'https://slack.com/api/files.sharedPublicURL?token={self.slack_bot_token}&file_id={file_id}'
+                    file_url = file["file_url"]
                     file_path = f"{path}/{file_name}"
                     logger.info(f"Downloading {file_name}...")
-                    response = requests.post(url)
-                    response_result = response.json()
-                    if response_result.get("ok"):
-                        public_url = response_result["file"]["permalink_public"]
-                        response = requests.get(public_url, allow_redirects=True)
-                        with open(file_path, 'wb') as f:
-                            f.write(response.content)
-                    else:
-                        logger.error({
-                            "class": self.__class__.__name__,
-                            "method": "save_chat_media",
-                            "error_message": "Error getting public url",
-                            "chat_name": chat_name,
-                            "chat_type": chat_type,
-                            "file_name": file_name,
-                            "file_id": file_id,
-                            "response": response_result
-                        })
+                    headers = {
+                        "Authorization": f"Bearer {self.slack_user_token}"
+                    }
+                    response = requests.get(file_url, headers=headers)
+                    with open(file_path, 'wb') as f:
+                        f.write(response.content)
+                    total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
+                    self.loading_bar.setValue(total_percentage)
+                    QApplication.processEvents()
                 logger.info("Download all media is complete!")
         except Exception as e:
             logger.exception(e)
