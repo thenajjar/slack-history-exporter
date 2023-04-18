@@ -229,8 +229,7 @@ class SlackChatExporter(QWidget):
 
     def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list):
         try:
-            with open(f"{application_path}/templates/chat_page_template.html", "r", encoding="utf-8") as file:
-                html_content = file.read()
+            html_content = html_template
             page_title = f"Nana Slack | {chat_type} | {chat_name}"
             html_content = html_content.replace("PLACE_PAGE_TITLE_HERE", page_title)
             chat_messages_result = self.convert_chat_messages_to_html(
@@ -522,6 +521,153 @@ class SlackChatExporter(QWidget):
                 "chat_type": chat_type,
                 "error": str(e)
             })
+
+html_template = """
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>PLACE_PAGE_TITLE_HERE</title>
+        <style>
+            body {
+            background-color: #232931;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            }
+            .container {
+            margin-top: 30px;
+            margin-bottom: 30px;
+            max-width: 95%;
+            margin-left: auto;
+            margin-right: auto;
+            background-color: #393E46;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            height: auto;
+            clear: both; /* added this line to clear any floats */
+            overflow: auto; /* added this line to show a scrollbar if necessary */
+            }
+            .message {
+            padding: 10px;
+            max-width: 780px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            clear: both;
+            }
+            .message.me {
+            background-color: #1c1c1c;
+            float: right;
+            }
+            .message.other {
+            background-color: #1c1c1c;
+            float: left;
+            }
+            .message.reply {
+            background-color: #1c1c1c;
+            float: left;
+            border: 1px solid #ccc;
+            margin-top: 10px;
+            }
+            .message.me p, .message.other p, .message.reply p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.5;
+            word-wrap: break-word;
+            }
+            .timestamp {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+            margin-left: 5px;
+            }
+            .code-block {
+            background-color: #383838;
+            border: 1px solid #9c9c9c;
+            border-radius: 5px;
+            margin: 10px 0;
+            padding: 10px;
+            clear: both; /* added this line to clear any floats */
+            overflow: auto; /* added this line to show a scrollbar if necessary */
+            }
+            .code-block pre {
+            margin: 0;
+            float: left;
+            }
+            .img {
+            max-width: 100%;
+            height: auto;
+            }
+            .video {
+            max-width: 100%;
+            height: auto;
+            }
+            .replies-btn {
+            background-color: transparent;
+            color: #00a6ff;
+            border: none;
+            font-size: 12px;
+            cursor: pointer;
+            }
+            .replies-btn:hover {
+            text-decoration: underline;
+            }
+            .date {
+                display: block;
+                width: 100%;
+                margin-top: 10px;
+                overflow: hidden;
+                text-align: center;
+                color: #999;
+            }
+
+            .date::after {
+                content: "";
+                display: inline-block;
+                width: 100%;
+                height: 1px;
+                margin-bottom: 10px;
+                background-color: #999;
+            }
+            /* Media queries */
+            @media (max-width: 800px) {
+            .container {
+            max-width: 90%;
+            }
+            }
+            @media (max-width: 600px) {
+            .message {
+            max-width: 95%;
+            }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            PLACE_MESSAGES_HERE
+        </div>
+        <script>
+            function showReplies(timestamp) {
+                var data = JSON.stringify(PLACE_REPLIES_HERE);
+                var replies = JSON.parse(data);
+                var repliesHtml = '';
+                for (const element of replies[timestamp]) {
+                    repliesHtml += element.html;
+                }
+                var parentContainer = document.querySelector(`button[data-timestamp="${timestamp}"]`).parentNode;
+                var repliesContainer = document.createElement('div');
+                repliesContainer.classList.add('replies-container');
+                repliesContainer.innerHTML = repliesHtml;
+                repliesContainer.setAttribute('data-timestamp', timestamp);
+                parentContainer.parentNode.insertBefore(repliesContainer, parentContainer.nextSibling);
+                parentContainer.removeChild(parentContainer.querySelector(`button[data-timestamp="${timestamp}"]`));
+            }
+        </script>
+    </body>
+</html>
+"""
 
 
 if __name__ == '__main__':
