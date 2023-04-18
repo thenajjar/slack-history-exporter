@@ -379,6 +379,14 @@ class SlackChatExporter(QWidget):
                                                 <img class="img" src="./media/{file_name_fixed}">
                                             </div>
                                         """
+                                    elif file.get("filetype") in ["mp3", "wav", "ogg", "flac", "aac", "wma", "m4a",
+                                                                  "m4b", "m4p", "m4r", "m4v", "m4b"]:
+                                        html += f"""
+                                                    <audio class="audio" controls>
+                                                        <source src="./media/{file_name_fixed}" type="audio/mpeg">
+                                                        Your browser does not support the audio tag.
+                                                    </audio>
+                                                """
                                     file_dict["file_name"] = file_name_fixed
                                     file_dict["file_url"] = file_url
                                     media_list.append(file_dict)
@@ -501,6 +509,14 @@ class SlackChatExporter(QWidget):
                                                         <img class="img" src="./media/{file_name_fixed}">
                                                     </div>
                                                 """
+                            elif file.get("filetype") in ["mp3", "wav", "ogg", "flac", "aac", "wma", "m4a",
+                                                          "m4b", "m4p", "m4r", "m4v", "m4b"]:
+                                html += f"""
+                                            <audio class="audio" controls>
+                                                <source src="./media/{file_name_fixed}" type="audio/mpeg">
+                                                Your browser does not support the audio tag.
+                                            </audio>
+                                        """
                             file_dict["file_name"] = file_name_fixed
                             file_dict["file_url"] = file_url
                             media_list.append(file_dict)
