@@ -35,7 +35,22 @@ class SlackChatExporter(QWidget):
         self.chat_data = []
         self.visible_chat_data = []
         self.users = {}
-
+        # fetch users from users.json if it exists, otherwise create it
+        try:
+            if os.path.exists(os.path.join(application_path, "users.json")):
+                with open(os.path.join(application_path, "users.json"), "r") as f:
+                    self.users = json.load(f)
+            else:
+                with open(os.path.join(application_path, "users.json"), "w") as f:
+                    json.dump(self.users, f)
+        except Exception as e:
+            logger.exception(e)
+            logger.error({
+                "class": self.__class__.__name__,
+                "method": "__init__",
+                "error_message": "Error loading users.json.",
+                "error": str(e)
+            })
         self.init_ui()
 
     def init_ui(self):
@@ -110,8 +125,8 @@ class SlackChatExporter(QWidget):
         self.chat_list.clear()
         self.visible_chat_data = []
         for chat in self.chat_data:
-            if text.lower() in chat["data"][0].lower():
-                item = QListWidgetItem(f"{chat['number']}: {', '.join(chat['data'])}")
+            if text.lower().strip() in chat["data"][0].lower() or text.lower() in chat["data"][1].lower():
+                item = QListWidgetItem(f"{chat['number']}: {chat['data'][1]}")
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked)
                 self.chat_list.addItem(item)
@@ -126,6 +141,7 @@ class SlackChatExporter(QWidget):
         return user_data
 
     def fetch_chat_names(self):
+        self.search_bar.clear()
         self.slack_user_token = self.token_input.text().strip()
         if not self.slack_user_token:
             logger.error("No Slack token provided")
@@ -156,10 +172,9 @@ class SlackChatExporter(QWidget):
             direct_messages = self.slack_client.get_chats_list(chat_type="dm")
             for i, d in enumerate(direct_messages):
                 user_id = d["user"]
-                user_name_data = self.slack_client.get_user_name(user_id=user_id)
-                self.users[user_id] = self.slack_client.get_user_name(user_id=user_id)
+                user_data = self.get_user_data(user_id=user_id)
                 chat_number = i + 1
-                chat_data = [user_name_data["name"], user_name_data["real_name"]]
+                chat_data = [user_data["name"], user_data["real_name"]]
                 self.chat_data.append({
                     "number": i + 1,
                     "type": chat_type,
@@ -168,10 +183,11 @@ class SlackChatExporter(QWidget):
                 })
                 value_percentage = int((i + 1) / len(direct_messages) * 100)
                 self.loading_bar.setValue(value_percentage)
-                item = QListWidgetItem(f"{chat_number}: {', '.join(chat_data)}")
+                item = QListWidgetItem(f"{chat_number}: {chat_data[1]}")
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked)
                 self.chat_list.addItem(item)
+                self.chat_list.scrollToBottom()
                 QApplication.processEvents()
         if chat_type != "Direct Message":
             for chat in self.chat_data:
@@ -179,6 +195,8 @@ class SlackChatExporter(QWidget):
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked)
                 self.chat_list.addItem(item)
+        with open(os.path.join(application_path, "users.json"), "w") as f:
+            json.dump(self.users, f)
         self.visible_chat_data = self.chat_data
         self.save_media_checkbox.setEnabled(True)
         self.save_button.setEnabled(True)
