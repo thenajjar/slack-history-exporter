@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt
 from datetime import datetime
 import json
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QComboBox, QPushButton, QGridLayout, \
-    QListWidget, QListWidgetItem, QCheckBox, QProgressBar, QLineEdit
+    QListWidget, QListWidgetItem, QCheckBox, QProgressBar, QLineEdit, QFileDialog
 
 from libraries.slack import SlackClient
 
@@ -44,6 +44,11 @@ class SlackChatExporter(QWidget):
         self.token_input = QLineEdit()
         self.token_input.setPlaceholderText("Slack token")
 
+        # select folder path to save the chat history in
+        self.folder_path_label = QLabel("Select a folder to save the chat history in:")
+        self.folder_path_button = QPushButton("Select Folder")
+        self.folder_path_button.clicked.connect(self.select_folder_path)
+
 
         self.chat_type_label = QLabel("Choose the type of chat to export:")
         self.chat_type_combo = QComboBox()
@@ -77,16 +82,18 @@ class SlackChatExporter(QWidget):
         grid = QGridLayout()
         grid.addWidget(self.token_label, 0, 0)
         grid.addWidget(self.token_input, 0, 1)
-        grid.addWidget(self.chat_type_label, 1, 0)
-        grid.addWidget(self.chat_type_combo, 1, 1)
-        grid.addWidget(self.description_label, 2, 0, 1, 2)
-        grid.addWidget(self.fetch_button, 3, 0, 1, 2)
-        grid.addWidget(self.loading_bar, 4, 0, 1, 2)
-        grid.addWidget(self.search_bar, 5, 0)
-        grid.addWidget(self.chat_list_label, 6, 0)
-        grid.addWidget(self.chat_list, 7, 0, 1, 2)
-        grid.addWidget(self.save_media_checkbox, 8, 0)
-        grid.addWidget(self.save_button, 8, 1)
+        grid.addWidget(self.folder_path_label, 1, 0)
+        grid.addWidget(self.folder_path_button, 1, 1)
+        grid.addWidget(self.chat_type_label, 2, 0)
+        grid.addWidget(self.chat_type_combo, 2, 1)
+        grid.addWidget(self.description_label, 3, 0, 1, 2)
+        grid.addWidget(self.fetch_button, 4, 0, 1, 2)
+        grid.addWidget(self.loading_bar, 5, 0, 1, 2)
+        grid.addWidget(self.search_bar, 6, 0)
+        grid.addWidget(self.chat_list_label, 7, 0)
+        grid.addWidget(self.chat_list, 8, 0, 1, 2)
+        grid.addWidget(self.save_media_checkbox, 9, 0)
+        grid.addWidget(self.save_button, 9, 1)
 
         self.setLayout(grid)
 
@@ -95,6 +102,11 @@ class SlackChatExporter(QWidget):
 
     def update_description(self, text):
         self.description_label.setText(self.chat_types[text])
+
+    def select_folder_path(self):
+        self.folder_path = QFileDialog.getExistingDirectory(self, "Select Directory")
+        self.folder_path_button.setText(self.folder_path)
+
 
     def search_chat_names(self, text):
         self.chat_list.clear()
@@ -116,7 +128,7 @@ class SlackChatExporter(QWidget):
         return user_data
 
     def fetch_chat_names(self):
-        self.slack_user_token = self.token_input.text()
+        self.slack_user_token = self.token_input.text().strip()
         if not self.slack_user_token:
             logger.error("No Slack token provided")
             self.token_input.setFocus()
@@ -385,7 +397,10 @@ class SlackChatExporter(QWidget):
         try:
             filename = f"Nana Slack - {chat_type} - {chat_name}.html"
             folder_path = f"Nana Slack - {chat_type} - {chat_name}"
-            full_path = f"{application_path}/{folder_path}"
+            project_path = application_path
+            if self.folder_path_button.text() != "Default":
+                project_path = self.folder_path_button.text()
+            full_path = f"{project_path}/{folder_path}"
             if not os.path.exists(full_path):
                 os.makedirs(full_path)
             with open(f"{full_path}/{filename}", "w") as f:
@@ -405,7 +420,10 @@ class SlackChatExporter(QWidget):
         try:
             if media:
                 folder_name = f"Nana Slack - {chat_type} - {chat_name}"
-                path = f"{application_path}/{folder_name}"
+                project_path = application_path
+                if self.folder_path_button.text() != "Default":
+                    project_path = self.folder_path_button.text()
+                path = f"{project_path}/{folder_name}"
                 if not os.path.exists(path):
                     os.makedirs(path)
                 for file in media:
