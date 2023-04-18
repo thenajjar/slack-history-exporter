@@ -231,6 +231,7 @@ class SlackChatExporter(QWidget):
         media_dict = []
         replies_dict = {}
         html = ""
+        last_date = ""
         for message in reversed(chat_messages):
             replies = []
             user_id = message["user"]
@@ -238,6 +239,15 @@ class SlackChatExporter(QWidget):
             user_name = user_data["real_name"]
             message_ts = message["ts"]
             timestamp = datetime.fromtimestamp(float(message_ts)).strftime("%Y-%m-%d %H:%M:%S")
+            current_date = timestamp.split(" ")[0]
+            # add line break if date changed
+            if current_date != last_date:
+                html += f"""
+                    <div class="date">
+                        <p><bdi>{current_date}</bdi></p>
+                    </div>
+                    """
+                last_date = current_date
             if message_text := message.get("text"):
                 text = message_text.replace("<", "&lt;").replace(">", "&gt;")
                 if "```" in text:
@@ -381,6 +391,13 @@ class SlackChatExporter(QWidget):
                     file_id = file["file_id"]
                     file_url = file["file_url"]
                     file_path = f"{path}/{file_name}"
+                    # check if file does not exists already in the directory
+                    if os.path.exists(file_path):
+                        logger.info(f"File {file_name} already exists!")
+                        total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
+                        self.loading_bar.setValue(total_percentage)
+                        QApplication.processEvents()
+                        continue
                     logger.info(f"Downloading {file_name}...")
                     headers = {
                         "Authorization": f"Bearer {self.slack_user_token}"

@@ -89,6 +89,23 @@
             .replies-btn:hover {
             text-decoration: underline;
             }
+            .date {
+                display: block;
+                width: 100%;
+                margin-top: 10px;
+                overflow: hidden;
+                text-align: center;
+                color: #999;
+            }
+
+            .date::after {
+                content: "";
+                display: inline-block;
+                width: 100%;
+                height: 1px;
+                margin-bottom: 10px;
+                background-color: #999;
+            }
             /* Media queries */
             @media (max-width: 800px) {
             .container {
@@ -121,33 +138,7 @@
                 repliesContainer.innerHTML = repliesHtml;
                 repliesContainer.setAttribute('data-timestamp', timestamp);
                 parentContainer.parentNode.insertBefore(repliesContainer, parentContainer.nextSibling);
-                var hideButton = document.createElement('button');
-                hideButton.innerHTML = 'Hide replies';
-                hideButton.classList.add('hide-replies-button');
-                hideButton.setAttribute('data-timestamp', timestamp);
-                hideButton.onclick = hideReplies;
-                parentContainer.parentNode.insertBefore(hideButton, repliesContainer.nextSibling);
                 parentContainer.removeChild(parentContainer.querySelector(`button[data-timestamp="${timestamp}"]`));
-            }
-
-            function hideReplies() {
-                var timestamp = this.getAttribute('data-timestamp');
-                var repliesContainer = document.querySelector(`div.replies-container[data-timestamp="${timestamp}"]`);
-                var hideButton = document.querySelector(`button.hide-replies-button[data-timestamp="${timestamp}"]`);
-                if (!repliesContainer || !hideButton) {
-                    // Element not found, do something
-                    return;
-                }
-                var showButton = document.createElement('button');
-                showButton.innerHTML = 'Show replies';
-                showButton.classList.add('show-replies-button');
-                showButton.setAttribute('data-timestamp', timestamp);
-                showButton.onclick = function () {
-                    showReplies(timestamp);
-                };
-                repliesContainer.parentNode.insertBefore(showButton, repliesContainer);
-                repliesContainer.parentNode.removeChild(repliesContainer);
-                hideButton.parentNode.removeChild(hideButton);
             }
         </script>
     </body>
