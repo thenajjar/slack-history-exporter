@@ -282,65 +282,7 @@ class SlackChatExporter(QWidget):
                     """
                 last_date = current_date
             if message_text := message.get("text"):
-                text = message_text.replace("<", "&lt;").replace(">", "&gt;")
-                if "```" in text:
-                    # Split message text into code blocks and regular text
-                    blocks = text.split("```")
-                    text_html = ""
-                    for i, block in enumerate(blocks):
-                        if i % 2 == 0:
-                            # Regular text block
-                            text_html += f"<p><bdi>{block}</bdi></p>"
-                        else:
-                            # Code block
-                            text_html += f'<div class="code-block"><pre>{block}</pre></div>'
-                    html += f"""
-                        <div class="message other">
-                            <p><strong><bdi>{user_name}</bdi></strong></p>
-                                {text_html}
-                        """
-                else:
-                    html += f"""
-                            <div class="message other">
-                                <p><strong><bdi>{user_name}</bdi></strong></p>
-                                <p><bdi>{text}</bdi></p>
-                            """
-                if attachments := message.get("attachments"):
-                    for attachment in attachments:
-                        html += f"  <p><em><bdi>{attachment.get('pretext', '')}</bdi></em></p>"
-                        if attachment.get("title"):
-                            html += f"  <p><strong><bdi>{attachment['title']}</bdi></strong></p>"
-                        if attachment.get("text"):
-                            text = attachment["text"].replace("<", "&lt;").replace(">", "&gt;")
-                            html += f"  <p><bdi>{text}</bdi></p>"
-                        if image_url := attachment.get("image_url"):
-                            image_url = image_url.replace("<", "").replace(">", "")
-                            html += f"""
-                                        <p><img class="img" src="{image_url}"></p>
-                                    """
-                if message.get("reply_count") and message.get("reply_count") > 0:
-                    temp_replies = self.slack_client.get_message_replies(
-                        chat_id=chat_id,
-                        message_ts=message_ts
-                    )
-                    # fix name of users in replies
-                    for reply in temp_replies:
-                        reply_user_id = reply["user"]
-                        reply_user_data = self.get_user_data(user_id=reply_user_id)
-                        reply["user"] = reply_user_data["real_name"]
-                        replies.append(reply)
-                if replies:
-                    html += f"""
-                        <div class="timestamp"><button onclick="showReplies('{message_ts}')"
-                                data-timestamp="{message_ts}"
-                                class="replies-btn">{message["reply_count"]} replies</button>{timestamp}</div>
-                        </div>
-                    """
-                else:
-                    html += f"""
-                                <div class="timestamp">{timestamp}</div>
-                            </div>
-                            """
+                html += self.convert_message_to_html(message=message, user_name=user_name)
             else:
                 html += f"""
                         <div class="message other">
@@ -382,10 +324,34 @@ class SlackChatExporter(QWidget):
                     html += """
                                 <p><em>Unknown message type</em></p>
                             """
+
+            if message.get("reply_count") and message.get("reply_count") > 0:
+                temp_replies = self.slack_client.get_message_replies(
+                    chat_id=chat_id,
+                    message_ts=message_ts
+                )
+                # fix name of users in replies
+                for reply in temp_replies:
+                    reply_user_id = reply["user"]
+                    reply_user_data = self.get_user_data(user_id=reply_user_id)
+                    reply["user"] = reply_user_data["real_name"]
+                    reply_result = self.convert_reply_to_html(reply=reply)
+                    reply["html"] = reply_result.get("html")
+                    if reply_result.get("media"):
+                        media_dict.extend(reply_result.get("media"))
+                    replies.append(reply)
+            if replies:
                 html += f"""
-                            <div class="timestamp">{timestamp}</div>
-                        </div>
+                            <div class="timestamp"><button onclick="showReplies('{message_ts}')"
+                                    data-timestamp="{message_ts}"
+                                    class="replies-btn">{message["reply_count"]} replies</button>{timestamp}
+                            </div>
                         """
+
+            html += f"""
+                        <div class="timestamp">{timestamp}</div>
+                    </div>
+                    """
             replies_dict[message_ts] = replies
         return {
             "html": html,
@@ -393,6 +359,102 @@ class SlackChatExporter(QWidget):
             "media": media_dict
         }
 
+    def convert_reply_to_html(self, reply):
+        reply_timestamp = datetime.fromtimestamp(float(reply["ts"])).strftime("%Y-%m-%d %H:%M:%S")
+        media_dict = []
+        html = '<div class="message reply">'
+        if reply.get("text"):
+            html += self.convert_message_to_html(message=reply, user_name=reply["user"])
+            html += f"""
+                        <div class="timestamp">{reply_timestamp}</div>
+                    </div> </div>
+                    """
+        else:
+            html += f"""
+                                    <div class="message other">
+                                        <p><strong><bdi>{reply["user"]}</bdi></strong></p>
+                                    """
+            if reply.get("files"):
+                for file in reply["files"]:
+                    if file_url := file.get("url_private"):
+                        file_dict = {}
+                        file_name = file["name"]
+                        html += f"""
+                                                    <p><a href="{file_name}">{file_name}</a></p>
+                                                """
+                        if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
+                            html += f"""
+                                                        <video class="video" controls>
+                                                            <source src="{file_name}" type="video/mp4">
+                                                            <source src="{file_name}" type="video/quicktime">
+                                                            Your browser does not support the video tag.
+                                                        </video>
+                                                    """
+                        elif file.get("filetype") in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff", "tif",
+                                                      "webp"]:
+                            html += f"""
+                                                <div class="container">
+                                                    <img class="img" src="{file_name}">
+                                                </div>
+                                            """
+                        file_dict["file_id"] = file.get("id")
+                        file_dict["file_type"] = file.get("filetype")
+                        file_dict["file_name"] = file_name
+                        file_dict["file_url"] = file_url
+                        media_dict.append(file_dict)
+                    elif file.get("name"):
+                        html += f"""
+                                                            <p><strong>{file['name']}</strong></p>
+                                                        """
+            else:
+                html += """
+                                            <p><em>Unknown message type</em></p>
+                                        """
+            html += f"""
+                                        <div class="timestamp">{reply_timestamp}</div>
+                                    </div></div>
+                                    """
+        return {"html": html, "media": media_dict}
+
+    def convert_message_to_html(self, message, user_name):
+        html = ""
+        text = message.get("text").replace("<", "&lt;").replace(">", "&gt;")
+        if "```" in text:
+            # Split message text into code blocks and regular text
+            blocks = text.split("```")
+            text_html = ""
+            for i, block in enumerate(blocks):
+                if i % 2 == 0:
+                    # Regular text block
+                    text_html += f"<p><bdi>{block}</bdi></p>"
+                else:
+                    # Code block
+                    text_html += f'<div class="code-block"><pre>{block}</pre></div>'
+            html += f"""
+                                <div class="message other">
+                                    <p><strong><bdi>{user_name}</bdi></strong></p>
+                                        {text_html}
+                                """
+        else:
+            html += f"""
+                                    <div class="message other">
+                                        <p><strong><bdi>{user_name}</bdi></strong></p>
+                                        <p><bdi>{text}</bdi></p>
+                                    """
+        if attachments := message.get("attachments"):
+            for attachment in attachments:
+                html += f"  <p><em><bdi>{attachment.get('pretext', '')}</bdi></em></p>"
+                if attachment.get("title"):
+                    html += f"  <p><strong><bdi>{attachment['title']}</bdi></strong></p>"
+                if attachment.get("text"):
+                    text = attachment["text"].replace("<", "&lt;").replace(">", "&gt;")
+                    html += f"  <p><bdi>{text}</bdi></p>"
+                if image_url := attachment.get("image_url"):
+                    image_url = image_url.replace("<", "").replace(">", "")
+                    html += f"""
+                                                <p><img class="img" src="{image_url}"></p>
+                                            """
+        return html
     def save_chat_to_file(self, chat_name: str, chat_type: str, html_content: str):
         try:
             filename = f"Nana Slack - {chat_type} - {chat_name}.html"
@@ -403,7 +465,7 @@ class SlackChatExporter(QWidget):
             full_path = f"{project_path}/{folder_path}"
             if not os.path.exists(full_path):
                 os.makedirs(full_path)
-            with open(f"{full_path}/{filename}", "w") as f:
+            with open(f"{full_path}/{filename}", "w", encoding="utf-8") as f:
                 f.write(html_content)
         except Exception as e:
             logger.error({

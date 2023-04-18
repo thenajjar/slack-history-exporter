@@ -127,10 +127,9 @@
             function showReplies(timestamp) {
                 var data = JSON.stringify(PLACE_REPLIES_HERE);
                 var replies = JSON.parse(data);
-                console.log("replies:", replies);
                 var repliesHtml = '';
                 for (const element of replies[timestamp]) {
-                    repliesHtml += '<div class="message reply"><p><strong><bdi>' + element.user + '</bdi></strong></p><p><bdi>' + element.text + '</bdi></p><div class="timestamp">' + new Date(element.ts * 1000).toLocaleString() + '</div></div>';
+                    repliesHtml += element.html;
                 }
                 var parentContainer = document.querySelector(`button[data-timestamp="${timestamp}"]`).parentNode;
                 var repliesContainer = document.createElement('div');
