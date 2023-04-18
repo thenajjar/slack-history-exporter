@@ -456,7 +456,7 @@ class SlackChatExporter(QWidget):
         return html
     def save_chat_to_file(self, chat_name: str, chat_type: str, html_content: str):
         try:
-            filename = f"Nana Slack - {chat_type} - {chat_name}.html"
+            filename = f"Nana Slack - {chat_type} - {chat_name}.html".replace("<", "").replace(">", "").replace(":", "").replace("?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
             folder_path = f"Nana Slack - {chat_type} - {chat_name}"
             project_path = application_path
             if self.folder_path_button.text() != "Default":
