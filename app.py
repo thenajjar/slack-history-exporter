@@ -25,9 +25,6 @@ class SlackChatExporter(QWidget):
         self.chat_types = {"Channel": "This type of chat is used for broadcasting messages to a large group of people.",
                            "Group Chat": "This type of chat is used for communication with a specific group of people.",
                            "Direct Message": "This type of chat is used for one-on-one communication."}
-        self.slack_user_token = os.environ.get("SLACK_USER_TOKEN")
-        self.slack_bot_token = os.environ.get("SLACK_BOT_TOKEN")
-        self.slack_client = SlackClient(self.slack_user_token)
         self.chat_data = []
         self.visible_chat_data = []
         self.users = {}
@@ -35,6 +32,12 @@ class SlackChatExporter(QWidget):
         self.init_ui()
 
     def init_ui(self):
+        # add an input field for the slack token
+        self.token_label = QLabel("Enter your Slack token:")
+        self.token_input = QLineEdit()
+        self.token_input.setPlaceholderText("Slack token")
+
+
         self.chat_type_label = QLabel("Choose the type of chat to export:")
         self.chat_type_combo = QComboBox()
         self.chat_type_combo.addItems(self.chat_types.keys())
@@ -51,6 +54,7 @@ class SlackChatExporter(QWidget):
         # add search bar
         self.search_bar = QLineEdit()
         self.search_bar.textChanged.connect(self.search_chat_names)
+        self.search_bar.setPlaceholderText("Search chat names")
         self.chat_list_label = QLabel("Select chat(s) to export:")
         self.chat_list = QListWidget()
         self.chat_list.setSelectionMode(QListWidget.NoSelection)
@@ -64,16 +68,18 @@ class SlackChatExporter(QWidget):
         self.save_button.setEnabled(False)
 
         grid = QGridLayout()
-        grid.addWidget(self.chat_type_label, 0, 0)
-        grid.addWidget(self.chat_type_combo, 0, 1)
-        grid.addWidget(self.description_label, 1, 0, 1, 2)
-        grid.addWidget(self.fetch_button, 2, 0, 1, 2)
-        grid.addWidget(self.loading_bar, 3, 0, 1, 2)
-        grid.addWidget(self.search_bar, 4, 0)
-        grid.addWidget(self.chat_list_label, 5, 0)
-        grid.addWidget(self.chat_list, 6, 0, 1, 2)
-        grid.addWidget(self.save_media_checkbox, 7, 0)
-        grid.addWidget(self.save_button, 7, 1)
+        grid.addWidget(self.token_label, 0, 0)
+        grid.addWidget(self.token_input, 0, 1)
+        grid.addWidget(self.chat_type_label, 1, 0)
+        grid.addWidget(self.chat_type_combo, 1, 1)
+        grid.addWidget(self.description_label, 2, 0, 1, 2)
+        grid.addWidget(self.fetch_button, 3, 0, 1, 2)
+        grid.addWidget(self.loading_bar, 4, 0, 1, 2)
+        grid.addWidget(self.search_bar, 5, 0)
+        grid.addWidget(self.chat_list_label, 6, 0)
+        grid.addWidget(self.chat_list, 7, 0, 1, 2)
+        grid.addWidget(self.save_media_checkbox, 8, 0)
+        grid.addWidget(self.save_button, 8, 1)
 
         self.setLayout(grid)
 
@@ -103,6 +109,14 @@ class SlackChatExporter(QWidget):
         return user_data
 
     def fetch_chat_names(self):
+        self.slack_user_token = self.token_input.text()
+        if not self.slack_user_token:
+            logger.error("No Slack token provided")
+            self.token_input.setFocus()
+            self.token_input.setStyleSheet("border: 1px solid red;")
+            return
+        self.token_input.setStyleSheet("border: 1px solid black;")
+        self.slack_client = SlackClient(self.slack_user_token)
         self.save_button.setEnabled(False)
         self.save_media_checkbox.setEnabled(False)
         self.chat_list.clear()
