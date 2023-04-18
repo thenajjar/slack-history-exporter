@@ -398,10 +398,6 @@ class SlackChatExporter(QWidget):
                                     "chat_id": chat_id,
                                     "error": str(e)
                                 })
-                    else:
-                        html += """
-                                    <p><em>Unknown message type</em></p>
-                                """
                 else:
                     html += f"""
                             <div class="message other">
@@ -844,10 +840,12 @@ html_template = """
             }
             .img {
             max-width: 100%;
+            max-height: 400px;
             height: auto;
             }
             .video {
             max-width: 100%;
+            max-height: 400px;
             height: auto;
             }
             .replies-btn {
