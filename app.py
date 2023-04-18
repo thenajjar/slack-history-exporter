@@ -488,28 +488,39 @@ class SlackChatExporter(QWidget):
                 if not os.path.exists(path):
                     os.makedirs(path)
                 for file in media:
-                    files_percentage = int((media.index(file) + 1) / len(media) * 100)
-                    file_name = file["file_name"]
-                    file_id = file["file_id"]
-                    file_url = file["file_url"]
-                    file_path = f"{path}/{file_name}"
-                    # check if file does not exists already in the directory
-                    if os.path.exists(file_path):
-                        logger.info(f"File {file_name} already exists!")
+                    try:
+                        files_percentage = int((media.index(file) + 1) / len(media) * 100)
+                        file_name = file["file_name"].replace("<", "").replace(">", "").replace(":", "").replace("?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
+                        file_id = file["file_id"]
+                        file_url = file["file_url"]
+                        file_path = f"{path}/{file_name}"
+                        # check if file does not exists already in the directory
+                        if os.path.exists(file_path):
+                            logger.info(f"File {file_name} already exists!")
+                            total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
+                            self.loading_bar.setValue(total_percentage)
+                            QApplication.processEvents()
+                            continue
+                        logger.info(f"Downloading {file_name}...")
+                        headers = {
+                            "Authorization": f"Bearer {self.slack_user_token}"
+                        }
+                        response = requests.get(file_url, headers=headers)
+                        with open(file_path, 'wb') as f:
+                            f.write(response.content)
                         total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
                         self.loading_bar.setValue(total_percentage)
                         QApplication.processEvents()
-                        continue
-                    logger.info(f"Downloading {file_name}...")
-                    headers = {
-                        "Authorization": f"Bearer {self.slack_user_token}"
-                    }
-                    response = requests.get(file_url, headers=headers)
-                    with open(file_path, 'wb') as f:
-                        f.write(response.content)
-                    total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
-                    self.loading_bar.setValue(total_percentage)
-                    QApplication.processEvents()
+                    except Exception as e:
+                        logger.exception(e)
+                        logger.error({
+                            "class": self.__class__.__name__,
+                            "method": "save_chat_media",
+                            "error_message": "Error saving chat media",
+                            "chat_name": chat_name,
+                            "chat_type": chat_type,
+                            "error": str(e)
+                        })
                 logger.info("Download all media is complete!")
         except Exception as e:
             logger.exception(e)
