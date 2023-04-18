@@ -36,6 +36,7 @@ class SlackChatExporter(QWidget):
         self.visible_chat_data = []
         self.users = {}
         self.checked_chat_names = {}
+        self.slack_user_token = ""
         # fetch users from users.json if it exists, otherwise create it
         try:
             if os.path.exists(os.path.join(application_path, "users.json")):
@@ -52,6 +53,25 @@ class SlackChatExporter(QWidget):
                 "error_message": "Error loading users.json.",
                 "error": str(e)
             })
+        # fetch slack user token from token.json if it exists, otherwise create it
+        try:
+            if os.path.exists(os.path.join(application_path, "tokens.json")):
+                with open(os.path.join(application_path, "tokens.json"), "r") as f:
+                    token = json.load(f)
+                    if "slack_user_token" in token:
+                        self.slack_user_token = token["slack_user_token"]
+            else:
+                with open(os.path.join(application_path, "tokens.json"), "w") as f:
+                    json.dump("", f)
+                    self.slack_user_token = ""
+        except Exception as e:
+            logger.exception(e)
+            logger.error({
+                "class": self.__class__.__name__,
+                "method": "__init__",
+                "error_message": "Error loading tokens.json.",
+                "error": str(e)
+            })
         self.init_ui()
 
     def init_ui(self):
@@ -59,6 +79,8 @@ class SlackChatExporter(QWidget):
         self.token_label = QLabel("Enter your Slack token:")
         self.token_input = QLineEdit()
         self.token_input.setPlaceholderText("Slack token")
+        if self.slack_user_token:
+            self.token_input.setText(self.slack_user_token)
 
         # select folder path to save the chat history in
         self.folder_path_label = QLabel("Select a folder to save the chat history in:")
@@ -215,8 +237,19 @@ class SlackChatExporter(QWidget):
                 item.setData(Qt.UserRole, chat["chat"]["id"])
                 self.checked_chat_names[chat["chat"]["id"]] = Qt.Unchecked
                 self.chat_list.addItem(item)
-        with open(os.path.join(application_path, "users.json"), "w") as f:
-            json.dump(self.users, f)
+        try:
+            with open(os.path.join(application_path, "tokens.json"), "w") as f:
+                json.dump({"slack_user_token": self.slack_user_token}, f)
+            with open(os.path.join(application_path, "users.json"), "w") as f:
+                json.dump(self.users, f)
+        except Exception as e:
+            logger.exception(e)
+            logger.error({
+                "class": self.__class__.__name__,
+                "method": "fetch_chat_names",
+                "error_message": "Error saving user data",
+                "error": str(e)
+            })
         self.visible_chat_data = self.chat_data
         self.save_media_checkbox.setEnabled(True)
         self.save_button.setEnabled(True)
