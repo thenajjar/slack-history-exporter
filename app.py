@@ -292,14 +292,18 @@ class SlackChatExporter(QWidget):
                         if file_url := file.get("url_private"):
                             file_dict = {}
                             file_name = file["name"]
+                            file_name_fixed = file_name.replace("<", "").replace(">", "").replace(":", "").replace("?",
+                                                                                                                   "").replace(
+                                "/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
+
                             html += f"""
-                                        <p><a href="{file_name}">{file_name}</a></p>
+                                        <p><a href="{file_name_fixed}">{file_name_fixed}</a></p>
                                     """
                             if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
                                 html += f"""
                                             <video class="video" controls>
-                                                <source src="{file_name}" type="video/mp4">
-                                                <source src="{file_name}" type="video/quicktime">
+                                                <source src="{file_name_fixed}" type="video/mp4">
+                                                <source src="{file_name_fixed}" type="video/quicktime">
                                                 Your browser does not support the video tag.
                                             </video>
                                         """
@@ -307,12 +311,12 @@ class SlackChatExporter(QWidget):
                                                           "webp"]:
                                 html += f"""
                                     <div class="container">
-                                        <img class="img" src="{file_name}">
+                                        <img class="img" src="{file_name_fixed}">
                                     </div>
                                 """
                             file_dict["file_id"] = file.get("id")
                             file_dict["file_type"] = file.get("filetype")
-                            file_dict["file_name"] = file_name
+                            file_dict["file_name"] = file_name_fixed
                             file_dict["file_url"] = file_url
                             media_dict.append(file_dict)
                         elif file.get("name"):
@@ -378,14 +382,15 @@ class SlackChatExporter(QWidget):
                     if file_url := file.get("url_private"):
                         file_dict = {}
                         file_name = file["name"]
+                        file_name_fixed = file_name.replace("<", "").replace(">", "").replace(":", "").replace("?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
                         html += f"""
-                                                    <p><a href="{file_name}">{file_name}</a></p>
+                                                    <p><a href="{file_name_fixed}">{file_name_fixed}</a></p>
                                                 """
                         if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
                             html += f"""
                                                         <video class="video" controls>
-                                                            <source src="{file_name}" type="video/mp4">
-                                                            <source src="{file_name}" type="video/quicktime">
+                                                            <source src="{file_name_fixed}" type="video/mp4">
+                                                            <source src="{file_name_fixed}" type="video/quicktime">
                                                             Your browser does not support the video tag.
                                                         </video>
                                                     """
@@ -393,12 +398,12 @@ class SlackChatExporter(QWidget):
                                                       "webp"]:
                             html += f"""
                                                 <div class="container">
-                                                    <img class="img" src="{file_name}">
+                                                    <img class="img" src="{file_name_fixed}">
                                                 </div>
                                             """
                         file_dict["file_id"] = file.get("id")
                         file_dict["file_type"] = file.get("filetype")
-                        file_dict["file_name"] = file_name
+                        file_dict["file_name"] = file_name_fixed
                         file_dict["file_url"] = file_url
                         media_dict.append(file_dict)
                     elif file.get("name"):
