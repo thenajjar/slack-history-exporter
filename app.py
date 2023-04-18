@@ -6,7 +6,6 @@ import requests
 from PyQt5.QtCore import Qt
 from datetime import datetime
 import json
-from dotenv import load_dotenv
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QComboBox, QPushButton, QGridLayout, \
     QListWidget, QListWidgetItem, QCheckBox, QProgressBar, QLineEdit
 
@@ -15,7 +14,15 @@ from libraries.slack import SlackClient
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-load_dotenv()
+try:
+    this_file = __file__
+except NameError:
+    this_file = sys.argv[0]
+this_file = os.path.abspath(this_file)
+if getattr(sys, 'frozen', False):
+    application_path = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+else:
+    application_path = os.path.dirname(this_file)
 
 
 class SlackChatExporter(QWidget):
@@ -210,7 +217,7 @@ class SlackChatExporter(QWidget):
 
     def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list):
         try:
-            with open("./templates/chat_page_template.html", "r", encoding="utf-8") as file:
+            with open(f"{application_path}/templates/chat_page_template.html", "r", encoding="utf-8") as file:
                 html_content = file.read()
             page_title = f"Nana Slack | {chat_type} | {chat_name}"
             html_content = html_content.replace("PLACE_PAGE_TITLE_HERE", page_title)
@@ -333,11 +340,11 @@ class SlackChatExporter(QWidget):
                             file_dict = {}
                             file_name = file["name"]
                             html += f"""
-                                        <p><a href="{file_url}">{file_name}</a></p>
+                                        <p><a href="{file_name}">{file_name}</a></p>
                                     """
                             if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
                                 html += f"""
-                                            <video class="video" crossorigin="https://files.slack.com/" controls>
+                                            <video class="video" controls>
                                                 <source src="{file_name}" type="video/mp4">
                                                 <source src="{file_name}" type="video/quicktime">
                                                 Your browser does not support the video tag.
@@ -377,10 +384,11 @@ class SlackChatExporter(QWidget):
     def save_chat_to_file(self, chat_name: str, chat_type: str, html_content: str):
         try:
             filename = f"Nana Slack - {chat_type} - {chat_name}.html"
-            path = f"Nana Slack - {chat_type} - {chat_name}"
-            if not os.path.exists(path):
-                os.makedirs(path)
-            with open(f"{path}/{filename}", "w") as f:
+            folder_path = f"Nana Slack - {chat_type} - {chat_name}"
+            full_path = f"{application_path}/{folder_path}"
+            if not os.path.exists(full_path):
+                os.makedirs(full_path)
+            with open(f"{full_path}/{filename}", "w") as f:
                 f.write(html_content)
         except Exception as e:
             logger.error({
@@ -396,7 +404,8 @@ class SlackChatExporter(QWidget):
     def save_chat_media(self, chat_name: str, chat_type: str, media: list, chat_percentage: int):
         try:
             if media:
-                path = f"Nana Slack - {chat_type} - {chat_name}"
+                folder_name = f"Nana Slack - {chat_type} - {chat_name}"
+                path = f"{application_path}/{folder_name}"
                 if not os.path.exists(path):
                     os.makedirs(path)
                 for file in media:
