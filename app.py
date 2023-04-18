@@ -347,6 +347,61 @@ class SlackChatExporter(QWidget):
                     last_date = current_date
                 if message.get("text"):
                     html += self.convert_message_to_html(message=message, user_name=user_name)
+                    if message.get("files"):
+                        for file in message["files"]:
+                            try:
+                                if file_url := file.get("url_private"):
+                                    file_dict = {}
+                                    file_name = file["name"]
+                                    file_name_fixed = self.fix_file_name(file_name=file_name)
+                                    self.media_file_names.append(file_name_fixed)
+                                    html += f"""
+                                                <p><a href="./media/{file_name_fixed}">{file_name_fixed}</a></p>
+                                            """
+                                    if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
+                                        html += f"""
+                                                    <video class="video" controls>
+                                                        <source src="./media/{file_name_fixed}" type="video/mp4">
+                                                        <source src="./media/{file_name_fixed}" type="video/quicktime">
+                                                        Your browser does not support the video tag.
+                                                    </video>
+                                                """
+                                    elif file.get("filetype") in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff",
+                                                                  "tif",
+                                                                  "webp"]:
+                                        html += f"""
+                                            <div class="container">
+                                                <img class="img" src="./media/{file_name_fixed}">
+                                            </div>
+                                        """
+                                    elif file.get("filetype") in ["mp3", "wav", "ogg", "flac", "aac", "wma", "m4a",
+                                                                  "m4b", "m4p", "m4r", "m4v", "m4b"]:
+                                        html += f"""
+                                                    <audio class="audio" controls>
+                                                        <source src="./media/{file_name_fixed}" type="audio/mpeg">
+                                                        Your browser does not support the audio tag.
+                                                    </audio>
+                                                """
+                                    file_dict["file_name"] = file_name_fixed
+                                    file_dict["file_url"] = file_url
+                                    media_list.append(file_dict)
+                                elif file.get("name"):
+                                    html += f"""
+                                                        <p><strong>{file['name']}</strong></p>
+                                                    """
+                            except Exception as e:
+                                logger.exception(e)
+                                logger.error({
+                                    "class": self.__class__.__name__,
+                                    "method": "convert_chat_messages_to_html",
+                                    "error_message": "Error converting file to html",
+                                    "chat_id": chat_id,
+                                    "error": str(e)
+                                })
+                    else:
+                        html += """
+                                    <p><em>Unknown message type</em></p>
+                                """
                 else:
                     html += f"""
                             <div class="message other">
@@ -474,6 +529,56 @@ class SlackChatExporter(QWidget):
         html = '<div class="message reply">'
         if reply.get("text"):
             html += self.convert_message_to_html(message=reply, user_name=reply["user"])
+            if reply.get("files"):
+                for file in reply["files"]:
+                    try:
+                        if file_url := file.get("url_private"):
+                            file_dict = {}
+                            file_name = file["name"]
+                            file_name_fixed = self.fix_file_name(file_name=file_name)
+                            self.media_file_names.append(file_name_fixed)
+                            html += f"""
+                                                        <p><a href="./media/{file_name_fixed}">{file_name_fixed}</a></p>
+                                                    """
+                            if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
+                                html += f"""
+                                                            <video class="video" controls>
+                                                                <source src="./media/{file_name_fixed}" type="video/mp4">
+                                                                <source src="./media/{file_name_fixed}" type="video/quicktime">
+                                                                Your browser does not support the video tag.
+                                                            </video>
+                                                        """
+                            elif file.get("filetype") in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff", "tif",
+                                                          "webp"]:
+                                html += f"""
+                                                    <div class="container">
+                                                        <img class="img" src="./media/{file_name_fixed}">
+                                                    </div>
+                                                """
+                            elif file.get("filetype") in ["mp3", "wav", "ogg", "flac", "aac", "wma", "m4a",
+                                                          "m4b", "m4p", "m4r", "m4v", "m4b"]:
+                                html += f"""
+                                            <audio class="audio" controls>
+                                                <source src="./media/{file_name_fixed}" type="audio/mpeg">
+                                                Your browser does not support the audio tag.
+                                            </audio>
+                                        """
+                            file_dict["file_name"] = file_name_fixed
+                            file_dict["file_url"] = file_url
+                            media_list.append(file_dict)
+                        elif file.get("name"):
+                            html += f"""
+                                                                <p><strong>{file['name']}</strong></p>
+                                                            """
+                    except Exception as e:
+                        logger.exception(e)
+                        logger.error({
+                            "class": self.__class__.__name__,
+                            "method": "convert_reply_to_html",
+                            "error_message": "Error converting reply to html",
+                            "reply": reply,
+                            "error": str(e)
+                        })
             html += f"""
                         <div class="timestamp">{reply_timestamp}</div>
                     </div> </div>
