@@ -14,7 +14,7 @@ from libraries.slack import SlackClient
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-version = "V1.0.0"
+version = "V1.0.1"
 
 try:
     this_file = __file__
@@ -311,8 +311,12 @@ class SlackChatExporter(QWidget):
             item = self.chat_list.item(i)
             if item.checkState() == Qt.Checked:
                 selected_chats.append(self.visible_chat_data[i])
+        total_chats = len(selected_chats)
+        chat_progress_unit = 100 / total_chats
+        current_chat_progress = 0
         for chat in selected_chats:
-            chat_percentage = int((selected_chats.index(chat) + 1) / len(selected_chats) * 100)
+            self.loading_bar.setValue(int(current_chat_progress))
+            QApplication.processEvents()
             chat_id = chat["chat"]["id"]
             chat_type = chat["type"]
             if chat_type != "Direct Message":
@@ -346,9 +350,10 @@ class SlackChatExporter(QWidget):
                 chat_name=chat_name,
                 chat_type=chat_type,
                 chat_messages=chat_messages,
-                chat_percentage=chat_percentage
+                chat_progress_unit=chat_progress_unit,
+                current_chat_progress=current_chat_progress,
             )
-            self.loading_bar.setValue(int(chat_percentage * 0.33))
+            current_message_progress = html_result.get("current_message_progress")
             QApplication.processEvents()
             self.save_chat_to_file(
                 chat_name=chat_name,
@@ -356,16 +361,20 @@ class SlackChatExporter(QWidget):
                 html_content=html_result.get("html"),
                 folder_path=folder_path
             )
-            self.loading_bar.setValue(int(chat_percentage * 0.5))
+            save_html_unit = chat_progress_unit * 0.1
+            current_html_progress = save_html_unit + current_chat_progress
+            self.loading_bar.setValue(int(current_html_progress))
             QApplication.processEvents()
             if save_media:
                 self.save_chat_media(
                     chat_name=chat_name,
                     chat_type=chat["type"],
                     media=html_result.get("media"),
-                    chat_percentage=chat_percentage,
+                    chat_progress_unit=chat_progress_unit,
+                    current_html_progress=current_html_progress,
                     media_folder_path=media_folder_path
                 )
+            current_chat_progress += chat_progress_unit
         self.loading_bar.setValue(100)
         self.save_button.setEnabled(True)
         self.save_media_checkbox.setEnabled(True)
@@ -376,7 +385,7 @@ class SlackChatExporter(QWidget):
         QApplication.processEvents()
 
     def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list,
-                             chat_percentage: int):
+                             chat_progress_unit: float, current_chat_progress: float):
         try:
             html_content = html_template
             page_title = f"Nana Slack | {chat_type} | {chat_name}"
@@ -384,7 +393,8 @@ class SlackChatExporter(QWidget):
             chat_messages_result = self.convert_chat_messages_to_html(
                 chat_id=chat_id,
                 chat_messages=chat_messages,
-                chat_percentage=chat_percentage
+                chat_progress_unit=chat_progress_unit,
+                current_chat_progress=current_chat_progress
             )
             html_content = html_content.replace("PLACE_MESSAGES_HERE", chat_messages_result.get("html"))
             html_content = html_content.replace(
@@ -393,7 +403,8 @@ class SlackChatExporter(QWidget):
             )
             return {
                 "html": html_content,
-                "media": chat_messages_result.get("media")
+                "media": chat_messages_result.get("media"),
+                "current_message_progress": chat_messages_result.get("current_message_progress"),
             }
         except Exception as e:
             logger.exception(e)
@@ -406,14 +417,18 @@ class SlackChatExporter(QWidget):
             })
             return {
                 "html": "",
-                "media": []
+                "media": [],
+                "current_message_progress": current_chat_progress,
             }
 
-    def convert_chat_messages_to_html(self, chat_id, chat_messages: list, chat_percentage: int):
+    def convert_chat_messages_to_html(self, chat_id, chat_messages: list, chat_progress_unit: float,
+                                      current_chat_progress: float):
         media_list = []
         replies_dict = {}
         html = ""
         last_date = ""
+        total_messages = len(chat_messages)
+        current_message_progress = current_chat_progress
         for message_index, message in enumerate(reversed(chat_messages)):
             try:
                 replies = []
@@ -584,9 +599,9 @@ class SlackChatExporter(QWidget):
                         </div>
                         """
                 replies_dict[message_ts] = replies
-                message_percentage = (message_index / len(chat_messages)) * 100
-                total_percentage = int(chat_percentage * ((message_percentage / 100) * 0.33))
-                self.loading_bar.setValue(total_percentage)
+                chat_progress_unit = chat_progress_unit * 0.4 / total_messages * (message_index + 1)
+                current_message_progress = current_chat_progress + chat_progress_unit
+                self.loading_bar.setValue(int(current_message_progress))
                 QApplication.processEvents()
             except Exception as e:
                 logger.exception(e)
@@ -602,7 +617,8 @@ class SlackChatExporter(QWidget):
         return {
             "html": html,
             "replies": replies_dict,
-            "media": media_list
+            "media": media_list,
+            "current_message_progress": current_message_progress
         }
 
     def convert_reply_to_html(self, reply):
@@ -801,11 +817,11 @@ class SlackChatExporter(QWidget):
                 "error": str(e)
             })
 
-    def save_chat_media(self, chat_name: str, chat_type: str, media: list, chat_percentage: int,
-                        media_folder_path: str):
+    def save_chat_media(self, chat_name: str, chat_type: str, media: list, media_folder_path: str,
+                        chat_progress_unit: float, current_html_progress: float):
         try:
             if media:
-                for file in media:
+                for file_index, file in enumerate(media):
                     try:
                         files_percentage = (media.index(file) + 1) / len(media) * 100
                         file_name = file["file_name"].replace("<", "").replace(">", "").replace(":", "").replace("?",
@@ -814,9 +830,10 @@ class SlackChatExporter(QWidget):
                         file_url = file["file_url"]
                         media_file_path = f"{media_folder_path}/{file_name}"
                         # check if file does not exists already in the directory
+                        media_progress_unit = chat_progress_unit * 0.5 / len(media) * (file_index + 1)
+                        current_media_progress = current_html_progress + media_progress_unit
                         if os.path.exists(media_file_path):
-                            total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
-                            self.loading_bar.setValue(total_percentage)
+                            self.loading_bar.setValue(int(current_media_progress))
                             QApplication.processEvents()
                             continue
                         logger.info(f"Downloading {file_name}...")
@@ -826,8 +843,7 @@ class SlackChatExporter(QWidget):
                         response = requests.get(file_url, headers=headers)
                         with open(media_file_path, 'wb') as f:
                             f.write(response.content)
-                        total_percentage = int(chat_percentage * (0.5 + (files_percentage / 100) * 0.5))
-                        self.loading_bar.setValue(total_percentage)
+                        self.loading_bar.setValue(int(current_media_progress))
                         QApplication.processEvents()
                     except Exception as e:
                         logger.exception(e)
