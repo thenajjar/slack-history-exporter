@@ -2,12 +2,13 @@ import json
 import logging
 import os
 import sys
+import humanize
 from datetime import datetime
 
 import requests
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QLabel, QLineEdit, \
-    QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QWidget
+    QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QWidget, QSpinBox, QHBoxLayout
 
 from libraries.slack import SlackClient
 
@@ -123,6 +124,8 @@ class SlackChatExporter(QWidget):
         self.loading_bar = QProgressBar()
         self.loading_bar.setRange(0, 100)
 
+        self.loading_label = QLabel("")
+
         # add search bar
         self.search_bar = QLineEdit()
         self.search_bar.textChanged.connect(self.search_chat_names)
@@ -139,6 +142,32 @@ class SlackChatExporter(QWidget):
         self.save_button.clicked.connect(self.save_chat_history)
         self.save_button.setEnabled(False)
 
+        # add deselect all button
+        self.deselect_all_button = QPushButton("Deselect All")
+        self.deselect_all_button.clicked.connect(self.deselect_all)
+
+        # add select all button
+        self.select_all_button = QPushButton("Select All")
+        self.select_all_button.clicked.connect(self.select_all)
+
+        # select range of chats
+        self.start_range_selector = QSpinBox(self)
+        self.start_range_selector.setMinimum(0)
+        self.start_range_selector.setMaximum(0)
+        self.start_range_selector.valueChanged.connect(self.update_end_range_selector)
+        self.end_range_selector = QSpinBox(self)
+        self.end_range_selector.setMinimum(0)
+        self.end_range_selector.setMaximum(0)
+        self.end_range_selector.valueChanged.connect(self.update_start_range_selector)
+        self.select_range_button = QPushButton("Apply Range Selection")
+        self.select_range_button.clicked.connect(self.select_range)
+
+        self.range_selector_widget = QWidget(self)
+        self.range_selector_layout = QHBoxLayout()
+        self.range_selector_layout.addWidget(self.start_range_selector)
+        self.range_selector_layout.addWidget(self.end_range_selector)
+        self.range_selector_widget.setLayout(self.range_selector_layout)
+
         # add label "created by"
         self.created_by_label = QLabel(f"{version} - Created by: Abdulwahab Alnajjar")
 
@@ -151,13 +180,18 @@ class SlackChatExporter(QWidget):
         grid.addWidget(self.chat_type_combo, 2, 1)
         grid.addWidget(self.description_label, 3, 0, 1, 2)
         grid.addWidget(self.fetch_button, 4, 0, 1, 2)
-        grid.addWidget(self.loading_bar, 5, 0, 1, 2)
-        grid.addWidget(self.search_bar, 6, 0)
-        grid.addWidget(self.chat_list_label, 7, 0)
-        grid.addWidget(self.chat_list, 8, 0, 1, 2)
-        grid.addWidget(self.save_media_checkbox, 9, 0)
-        grid.addWidget(self.save_button, 9, 1)
-        grid.addWidget(self.created_by_label, 10, 0, 1, 2)
+        grid.addWidget(self.loading_label, 5, 0, 1, 2)
+        grid.addWidget(self.loading_bar, 6, 0, 1, 2)
+        grid.addWidget(self.search_bar, 7, 0)
+        grid.addWidget(self.chat_list_label, 8, 0)
+        grid.addWidget(self.chat_list, 9, 0, 1, 2)
+        grid.addWidget(self.deselect_all_button, 10, 0)
+        grid.addWidget(self.select_all_button, 10, 1)
+        grid.addWidget(self.range_selector_widget, 11, 0)
+        grid.addWidget(self.select_range_button, 11, 1)
+        grid.addWidget(self.save_media_checkbox, 12, 0)
+        grid.addWidget(self.save_button, 12, 1)
+        grid.addWidget(self.created_by_label, 13, 0, 1, 2)
 
         self.setLayout(grid)
 
@@ -167,6 +201,35 @@ class SlackChatExporter(QWidget):
     def update_token(self, text):
         self.slack_user_token = text
         self.cache_settings()
+
+    def deselect_all(self):
+        for i in range(self.chat_list.count()):
+            self.chat_list.item(i).setCheckState(Qt.Unchecked)
+
+    def select_all(self):
+        for i in range(self.chat_list.count()):
+            self.chat_list.item(i).setCheckState(Qt.Checked)
+
+    def select_range(self):
+        start = self.start_range_selector.value()
+        end = self.end_range_selector.value()
+        for i in range(self.chat_list.count()):
+            if start <= i+1 <= end:
+                self.chat_list.item(i).setCheckState(Qt.Checked)
+            else:
+                self.chat_list.item(i).setCheckState(Qt.Unchecked)
+
+    def update_start_range_selector(self):
+        self.start_range_selector.setMaximum(self.end_range_selector.value())
+        if self.end_range_selector.value() < self.start_range_selector.value():
+            self.start_range_selector.setMaximum(self.end_range_selector.value())
+        QApplication.processEvents()
+
+    def update_end_range_selector(self):
+        self.end_range_selector.setMinimum(self.start_range_selector.value())
+        if self.start_range_selector.value() > self.end_range_selector.value():
+            self.end_range_selector.setMinimum(self.start_range_selector.value())
+        QApplication.processEvents()
 
     def closeEvent(self, event):
         self.cache_settings()
@@ -184,6 +247,25 @@ class SlackChatExporter(QWidget):
     def update_description(self, text):
         self.description_label.setText(self.chat_types[text])
 
+    def update_window_state(self, state: bool):
+        self.token_input.setEnabled(state)
+        self.folder_path_button.setEnabled(state)
+        self.chat_type_combo.setEnabled(state)
+        self.search_bar.setEnabled(state)
+        self.deselect_all_button.setEnabled(state)
+        self.select_all_button.setEnabled(state)
+        # update all the chat list items to be disabled if state is false and enabled if state is true
+        for i in range(self.chat_list.count()):
+            if state:
+                self.chat_list.item(i).setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+            else:
+                self.chat_list.item(i).setFlags(Qt.NoItemFlags)
+        self.end_range_selector.setEnabled(state)
+        self.start_range_selector.setEnabled(state)
+        self.select_range_button.setEnabled(state)
+        self.save_media_checkbox.setEnabled(state)
+        self.save_button.setEnabled(state)
+
     def select_folder_path(self):
         self.folder_path = QFileDialog.getExistingDirectory(self, "Select Directory")
         while not self.folder_path or not os.path.exists(self.folder_path):
@@ -197,6 +279,8 @@ class SlackChatExporter(QWidget):
             self.folder_path = QFileDialog.getExistingDirectory(self, "Select Directory")
         self.folder_path_button.setText(self.folder_path)
         self.cache_settings()
+        # reset style sheet
+        self.folder_path_button.setStyleSheet("")
 
     def search_chat_names(self, text):
         # save check state of all items in dict with id as key
@@ -236,17 +320,18 @@ class SlackChatExporter(QWidget):
             self.token_input.setFocus()
             self.token_input.setStyleSheet("border: 1px solid red;")
             return
-        self.token_input.setStyleSheet("border: 1px solid black;")
-        self.slack_client = SlackClient(self.slack_user_token)
-        self.save_button.setEnabled(False)
-        self.save_media_checkbox.setEnabled(False)
+        if self.folder_path_button.text() == "Select Folder" or not self.folder_path_button.text():
+            logger.error("No folder path provided")
+            self.folder_path_button.setFocus()
+            self.folder_path_button.setStyleSheet("border: 1px solid red;")
+            return
+        self.token_input.setStyleSheet("")
         self.chat_list.clear()
         self.loading_bar.setValue(0)
-        self.search_bar.setEnabled(False)
-        self.save_button.setEnabled(False)
-        self.chat_type_combo.setEnabled(False)
-        self.token_input.setEnabled(False)
+        self.loading_label.setText("Fetching chat names...")
+        self.update_window_state(False)
         QApplication.processEvents()
+        self.slack_client = SlackClient(self.slack_user_token)
         self.chat_data = []
         self.visible_chat_data = []
         chat_type = self.chat_type_combo.currentText()
@@ -306,25 +391,25 @@ class SlackChatExporter(QWidget):
                 "error_message": "Error saving user data",
                 "error": str(e)
             })
+        total_values = self.chat_list.count()
+        min_range = 1 if total_values > 0 else 0
+        self.start_range_selector.setMaximum(total_values)
+        self.start_range_selector.setMinimum(min_range)
+        self.start_range_selector.setValue(min_range)
+        self.end_range_selector.setMinimum(min_range)
+        self.end_range_selector.setMaximum(total_values)
+        self.end_range_selector.setValue(total_values)
         self.visible_chat_data = self.chat_data
-        self.save_media_checkbox.setEnabled(True)
-        self.save_button.setEnabled(True)
-        self.search_bar.setEnabled(True)
-        self.save_button.setEnabled(True)
-        self.chat_type_combo.setEnabled(True)
-        self.token_input.setEnabled(True)
+        self.loading_label.setText("Please select chats to save:")
+        self.update_window_state(True)
         QApplication.processEvents()
 
     def save_chat_history(self):
         self.search_bar.clear()
         self.search_chat_names("")
-        self.save_button.setEnabled(False)
-        self.save_media_checkbox.setEnabled(False)
         self.loading_bar.setValue(0)
-        self.search_bar.setEnabled(False)
-        self.save_button.setEnabled(False)
-        self.chat_type_combo.setEnabled(False)
-        self.token_input.setEnabled(False)
+        self.loading_label.setText("Saving chat history...")
+        self.update_window_state(False)
         QApplication.processEvents()
         selected_chats = []
         save_media = self.save_media_checkbox.isChecked()
@@ -335,7 +420,9 @@ class SlackChatExporter(QWidget):
         total_chats = len(selected_chats)
         chat_progress_unit = 100 / total_chats
         current_chat_progress = 0
-        for chat in selected_chats:
+        for chat_index, chat in enumerate(selected_chats):
+            self.loading_label.setText(f"Saving chat {chat_index+ 1} of {total_chats} selected chats...")
+            logger.info(f"Saving chat {chat_index+ 1} of {total_chats} selected chats...")
             self.loading_bar.setValue(int(current_chat_progress))
             QApplication.processEvents()
             chat_id = chat["chat"]["id"]
@@ -398,13 +485,11 @@ class SlackChatExporter(QWidget):
             current_chat_progress += chat_progress_unit
             self.cache_settings()
         self.loading_bar.setValue(100)
-        self.save_button.setEnabled(True)
-        self.save_media_checkbox.setEnabled(True)
-        self.search_bar.setEnabled(True)
-        self.save_button.setEnabled(True)
-        self.chat_type_combo.setEnabled(True)
-        self.token_input.setEnabled(True)
+        self.deselect_all()
+        self.loading_label.setText("Done Saving chats! Please select other chats to save:")
+        self.update_window_state(True)
         QApplication.processEvents()
+        logger.info("All Chat history saved successfully!")
 
     def convert_chat_to_html(self, chat_id: str, chat_name: str, chat_type: str, chat_messages: list,
                              chat_progress_unit: float, current_chat_progress: float):
@@ -453,6 +538,11 @@ class SlackChatExporter(QWidget):
         current_message_progress = current_chat_progress
         for message_index, message in enumerate(reversed(chat_messages)):
             try:
+                message_progress_unit = chat_progress_unit * 0.4 / total_messages * (message_index + 1)
+                current_message_progress = current_chat_progress + message_progress_unit
+                self.loading_bar.setValue(int(current_message_progress))
+                QApplication.processEvents()
+                self.loading_label.setText(f"Saving {message_index + 1} of {total_messages} messages...")
                 replies = []
                 user_id = message["user"] if message.get("user") else message["bot_id"]
                 user_data = self.get_user_data(user_id=user_id)
@@ -481,7 +571,7 @@ class SlackChatExporter(QWidget):
                                     html += f"""
                                                 <p><a href="./media/{file_name_fixed}">{file_name_fixed}</a></p>
                                             """
-                                    if file.get("filetype") in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
+                                    if file.get("filetype").lower() in ["mp4", "mov", "avi", "wmv", "flv", "webm", "mkv"]:
                                         html += f"""
                                                     <video class="video" controls>
                                                         <source src="./media/{file_name_fixed}" type="video/mp4">
@@ -489,15 +579,15 @@ class SlackChatExporter(QWidget):
                                                         Your browser does not support the video tag.
                                                     </video>
                                                 """
-                                    elif file.get("filetype") in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff",
+                                    elif file.get("filetype").lower() in ["jpg", "png", "gif", "jpeg", "bmp", "svg", "tiff",
                                                                   "tif",
-                                                                  "webp"]:
+                                                                  "webp", "ico", "heic", "heif", "psd", "raw"]:
                                         html += f"""
                                             <div class="container">
                                                 <img class="img" src="./media/{file_name_fixed}">
                                             </div>
                                         """
-                                    elif file.get("filetype") in ["mp3", "wav", "ogg", "flac", "aac", "wma", "m4a",
+                                    elif file.get("filetype").lower() in ["mp3", "wav", "ogg", "flac", "aac", "wma", "m4a",
                                                                   "m4b", "m4p", "m4r", "m4v", "m4b"]:
                                         html += f"""
                                                     <audio class="audio" controls>
@@ -632,10 +722,6 @@ class SlackChatExporter(QWidget):
                         </div>
                         """
                 replies_dict[message_ts] = replies
-                chat_progress_unit = chat_progress_unit * 0.4 / total_messages * (message_index + 1)
-                current_message_progress = current_chat_progress + chat_progress_unit
-                self.loading_bar.setValue(int(current_message_progress))
-                QApplication.processEvents()
             except Exception as e:
                 logger.exception(e)
                 logger.error({
@@ -856,7 +942,6 @@ class SlackChatExporter(QWidget):
             if media:
                 for file_index, file in enumerate(media):
                     try:
-                        files_percentage = (media.index(file) + 1) / len(media) * 100
                         file_name = file["file_name"].replace("<", "").replace(">", "").replace(":", "").replace("?",
                                                                                                                  "").replace(
                             "/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
@@ -869,10 +954,16 @@ class SlackChatExporter(QWidget):
                             self.loading_bar.setValue(int(current_media_progress))
                             QApplication.processEvents()
                             continue
-                        logger.info(f"Downloading {file_name}...")
                         headers = {
                             "Authorization": f"Bearer {self.slack_user_token}"
                         }
+                        header_response = requests.head(file_url, headers=headers)
+                        file_size = int(header_response.headers.get('Content-Length', 0))
+                        file_unit = humanize.naturalsize(file_size)
+                        logger.info(f"Downloading file {file_index + 1} of {len(media)}: {file_name} {file_unit}...")
+                        self.loading_label.setText(f"Downloading file {file_index + 1} of {len(media)}: {file_name} "
+                                                   f"{file_unit}...")
+                        QApplication.processEvents()
                         response = requests.get(file_url, headers=headers)
                         with open(media_file_path, 'wb') as f:
                             f.write(response.content)
