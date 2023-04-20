@@ -14,7 +14,7 @@ from libraries.slack import SlackClient
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-version = "V1.0.1"
+version = "V1.0.2"
 
 try:
     this_file = __file__
@@ -39,6 +39,7 @@ class SlackChatExporter(QWidget):
         self.users = {}
         self.checked_chat_names = {}
         self.slack_user_token = ""
+        self.settings = {}
         # fetch users from users.json if it exists, otherwise create it
         try:
             if os.path.exists(os.path.join(application_path, "users.json")):
@@ -74,12 +75,31 @@ class SlackChatExporter(QWidget):
                 "error_message": "Error loading tokens.json.",
                 "error": str(e)
             })
+        try:
+            if os.path.exists(os.path.join(application_path, "settings.json")):
+                with open(os.path.join(application_path, "settings.json"), "r") as f:
+                    settings = json.load(f)
+                    if "save_path" in settings:
+                        self.settings["save_path"] = settings["save_path"]
+                    else:
+                        with open(os.path.join(application_path, "settings.json"), "w") as f:
+                            json.dump({"save_path": ""}, f)
+                            self.settings["save_path"] = ""
+        except Exception as e:
+            logger.exception(e)
+            logger.error({
+                "class": self.__class__.__name__,
+                "method": "__init__",
+                "error_message": "Error loading settings.json.",
+                "error": str(e)
+            })
         self.init_ui()
 
     def init_ui(self):
         # add an input field for the slack token
         self.token_label = QLabel("Enter your Slack token:")
         self.token_input = QLineEdit()
+        self.token_input.textChanged.connect(self.update_token)
         self.token_input.setPlaceholderText("Slack token")
         if self.slack_user_token:
             self.token_input.setText(self.slack_user_token)
@@ -88,7 +108,8 @@ class SlackChatExporter(QWidget):
         self.folder_path_label = QLabel("Select a folder to save the chat history in:")
         self.folder_path_button = QPushButton("Select Folder")
         self.folder_path_button.clicked.connect(self.select_folder_path)
-
+        if self.settings.get("save_path"):
+            self.folder_path_button.setText(self.settings["save_path"])
         self.chat_type_label = QLabel("Choose the type of chat to export:")
         self.chat_type_combo = QComboBox()
         self.chat_type_combo.addItems(self.chat_types.keys())
@@ -143,22 +164,12 @@ class SlackChatExporter(QWidget):
         self.setWindowTitle("Slack Chat History Exporter")
         self.show()
 
+    def update_token(self, text):
+        self.slack_user_token = text
+        self.cache_settings()
+
     def closeEvent(self, event):
-        try:
-            self.slack_user_token = self.token_input.text()
-            with open(os.path.join(application_path, "tokens.json"), "w") as f:
-                json.dump({"slack_user_token": self.slack_user_token}, f)
-            with open(os.path.join(application_path, "users.json"), "w") as f:
-                json.dump(self.users, f)
-            QApplication.processEvents()
-        except Exception as e:
-            logger.exception(e)
-            logger.error({
-                "class": self.__class__.__name__,
-                "method": "closeEvent",
-                "error_message": "Error saving users.json or tokens.json.",
-                "error": str(e)
-            })
+        self.cache_settings()
         reply = QMessageBox.question(
             self,
             "Message", "Are you sure you want to exist?",
@@ -175,7 +186,17 @@ class SlackChatExporter(QWidget):
 
     def select_folder_path(self):
         self.folder_path = QFileDialog.getExistingDirectory(self, "Select Directory")
+        while not self.folder_path or not os.path.exists(self.folder_path):
+            # show error message that user must select a valid folder
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Please select a valid folder.",
+                QMessageBox.Ok
+            )
+            self.folder_path = QFileDialog.getExistingDirectory(self, "Select Directory")
         self.folder_path_button.setText(self.folder_path)
+        self.cache_settings()
 
     def search_chat_names(self, text):
         # save check state of all items in dict with id as key
@@ -330,7 +351,7 @@ class SlackChatExporter(QWidget):
                                                                                                               "").replace(
                 "?", "").replace("/", "").replace("\\", "").replace("*", "").replace("|", "").replace('"', "")
             project_path = application_path
-            if self.folder_path_button.text() != "Default":
+            if self.folder_path_button.text() != "Select Folder" or self.folder_path_button.text() != "":
                 project_path = self.folder_path_button.text()
             folder_path = f"{project_path}/{folder_name}"
             if not os.path.exists(folder_path):
@@ -362,7 +383,7 @@ class SlackChatExporter(QWidget):
                 folder_path=folder_path
             )
             save_html_unit = chat_progress_unit * 0.1
-            current_html_progress = save_html_unit + current_chat_progress
+            current_html_progress = save_html_unit + current_message_progress
             self.loading_bar.setValue(int(current_html_progress))
             QApplication.processEvents()
             if save_media:
@@ -375,6 +396,7 @@ class SlackChatExporter(QWidget):
                     media_folder_path=media_folder_path
                 )
             current_chat_progress += chat_progress_unit
+            self.cache_settings()
         self.loading_bar.setValue(100)
         self.save_button.setEnabled(True)
         self.save_media_checkbox.setEnabled(True)
@@ -561,31 +583,42 @@ class SlackChatExporter(QWidget):
                                 """
 
                 if message.get("reply_count") and message.get("reply_count") > 0:
-                    temp_replies = self.slack_client.get_message_replies(
-                        chat_id=chat_id,
-                        message_ts=message_ts
-                    )
-                    # fix name of users in replies
-                    for reply in temp_replies:
-                        try:
-                            reply_user_id = reply["user"] if reply.get("user") else reply["bot_id"]
-                            reply_user_data = self.get_user_data(user_id=reply_user_id)
-                            reply["user"] = reply_user_data["real_name"]
-                            reply_result = self.convert_reply_to_html(reply=reply)
-                            reply["html"] = reply_result.get("html")
-                            if reply_result.get("media"):
-                                media_list.extend(reply_result.get("media"))
-                            replies.append(reply)
-                        except Exception as e:
-                            logger.exception(e)
-                            logger.error({
-                                "class": self.__class__.__name__,
-                                "method": "convert_chat_messages_to_html",
-                                "error_message": "Error converting chat messages to html",
-                                "chat_id": chat_id,
-                                "chat_message": message,
-                                "error": str(e)
-                            })
+                    try:
+                        temp_replies = self.slack_client.get_message_replies(
+                            chat_id=chat_id,
+                            message_ts=message_ts
+                        )
+                        # fix name of users in replies
+                        for reply in temp_replies:
+                            try:
+                                reply_user_id = reply["user"] if reply.get("user") else reply["bot_id"]
+                                reply_user_data = self.get_user_data(user_id=reply_user_id)
+                                reply["user"] = reply_user_data["real_name"]
+                                reply_result = self.convert_reply_to_html(reply=reply)
+                                reply["html"] = reply_result.get("html")
+                                if reply_result.get("media"):
+                                    media_list.extend(reply_result.get("media"))
+                                replies.append(reply)
+                            except Exception as e:
+                                logger.exception(e)
+                                logger.error({
+                                    "class": self.__class__.__name__,
+                                    "method": "convert_chat_messages_to_html",
+                                    "error_message": "Error converting chat messages to html",
+                                    "chat_id": chat_id,
+                                    "chat_message": message,
+                                    "error": str(e)
+                                })
+                    except Exception as e:
+                        logger.exception(e)
+                        logger.error({
+                            "class": self.__class__.__name__,
+                            "method": "convert_chat_messages_to_html",
+                            "error_message": "Error getting message replies",
+                            "chat_id": chat_id,
+                            "chat_message": message,
+                            "error": str(e)
+                        })
                 if replies:
                     html += f"""
                                 <div class="timestamp"><button onclick="showReplies('{message_ts}')"
@@ -864,6 +897,33 @@ class SlackChatExporter(QWidget):
                 "error_message": "Error saving chat media",
                 "chat_name": chat_name,
                 "chat_type": chat_type,
+                "error": str(e)
+            })
+
+    def cache_settings(self):
+        try:
+            slack_user_token = self.token_input.text().strip()
+            if slack_user_token:
+                with open(os.path.join(application_path, "tokens.json"), "w") as f:
+                    json.dump({"slack_user_token": slack_user_token}, f)
+                    self.slack_user_token = slack_user_token
+            with open(os.path.join(application_path, "users.json"), "w") as f:
+                json.dump(self.users, f)
+            try:
+                save_path = self.folder_path_button.text()
+                if save_path and save_path != "Select Folder":
+                    with open(os.path.join(application_path, "settings.json"), "w") as f:
+                        self.settings["save_path"] = save_path
+                        json.dump(self.settings, f)
+            except:
+                pass
+            QApplication.processEvents()
+        except Exception as e:
+            logger.exception(e)
+            logger.error({
+                "class": self.__class__.__name__,
+                "method": "cache_settings",
+                "error_message": "Error caching settings",
                 "error": str(e)
             })
 

@@ -163,3 +163,5 @@ cython_debug/
 Nana Slack*
 users.json
 tokens.json
+settings.json
+.DS_Store
